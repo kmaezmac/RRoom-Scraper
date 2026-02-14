@@ -9,6 +9,9 @@ async function test(requestUrl, browserPort) {
   console.log(requestUrl);
   console.log("使用ブラウザポート:", browserPort);
   await axios.get(requestUrl, {
+    headers: {
+      'Authorization': `Bearer ${process.env.ACCESS_TOKEN}`
+    }
   }).then(async (response) => {
     if (response.status !== 201) {
       for (var i = 0; i < response.data.Items.length; i++) {
@@ -26,7 +29,19 @@ async function test(requestUrl, browserPort) {
       }
     }
   }).catch((error) => {
-    console.log(error);
+    console.error("=== APIリクエストエラー ===");
+    console.error("エラーメッセージ:", error.message);
+    if (error.response) {
+      console.error("ステータスコード:", error.response.status);
+      console.error("レスポンスデータ:", JSON.stringify(error.response.data, null, 2));
+      console.error("レスポンスヘッダー:", JSON.stringify(error.response.headers, null, 2));
+    } else if (error.request) {
+      console.error("リクエストが送信されましたが、レスポンスがありません");
+      console.error("リクエスト情報:", error.request);
+    } else {
+      console.error("エラー詳細:", error);
+    }
+    console.error("========================");
     return;
   });
 }
@@ -43,24 +58,30 @@ var age = args[Math.floor(Math.random()* args.length)];
   try {
     console.log("=== アカウント1の処理を開始 ===");
     var random = Math.floor(Math.random() * 34) + 1;
-    var requestUrl = "https://app.rakuten.co.jp/services/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID
-    + "&age=" + age + "&sex=1&carrier=0&page=" + random;
+    var requestUrl = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID
+    + "&age=" + age + "&sex=1&carrier=0&page=" + random + "&accessKey=" + process.env.ACCESS_TOKEN;
     await test(requestUrl, 9222); // ポート9222を指定
     console.log("=== アカウント1の処理完了 ===");
   } catch (error) {
-    // ブラウザに接続できない場合は何もしない（スキップ）
+    console.error("=== アカウント1のエラー ===");
+    console.error("エラーメッセージ:", error.message);
+    console.error("エラー詳細:", error);
+    console.error("========================");
   }
 
   // アカウント2の処理（ポート9223）
   try {
     console.log("=== アカウント2の処理を開始 ===");
     var random2 = Math.floor(Math.random() * 34) + 1;
-    var requestUrl2 = "https://app.rakuten.co.jp/services/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID2
-    + "&age=" + age + "&sex=1&carrier=0&page=" + random2;
+    var requestUrl2 = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID
+    + "&age=" + age + "&sex=1&carrier=0&page=" + random2 + "&accessKey=" + process.env.ACCESS_TOKEN;
     await test(requestUrl2, 9223); // ポート9223を指定
     console.log("=== アカウント2の処理完了 ===");
   } catch (error) {
-    // ブラウザに接続できない場合は何もしない（スキップ）
+    console.error("=== アカウント2のエラー ===");
+    console.error("エラーメッセージ:", error.message);
+    console.error("エラー詳細:", error);
+    console.error("========================");
   }
 })();
 
@@ -81,6 +102,7 @@ const sleep = milliseconds =>
   );
 
 async function post(itemCode, description, itemName, catchcopy, browserPort = 9222) {
+  let page = null;
   try {
     // 既存のブラウザに接続（指定されたポートに接続）
     const browser = await puppeteer.connect({
@@ -88,7 +110,7 @@ async function post(itemCode, description, itemName, catchcopy, browserPort = 92
       defaultViewport: null
     });
 
-    const page = await browser.newPage();
+    page = await browser.newPage();
 
     const url = `https://room.rakuten.co.jp/mix?itemcode=${itemCode}&scid=we_room_upc60`;
     console.log("ページに移動中");
@@ -144,7 +166,19 @@ async function post(itemCode, description, itemName, catchcopy, browserPort = 92
     // ページだけを閉じて、ブラウザは開いたままにする
     await page.close();
   } catch (error) {
-    console.log(error);
+    console.error("=== Puppeteer処理エラー ===");
+    console.error("商品コード:", itemCode);
+    console.error("エラーメッセージ:", error.message);
+    console.error("エラー詳細:", error);
+    console.error("========================");
+    // エラー時もタブを閉じる
+    if (page) {
+      try {
+        await page.close();
+      } catch (closeError) {
+        // ページが既に閉じている場合などのエラーは無視
+      }
+    }
     return;
   }
 
