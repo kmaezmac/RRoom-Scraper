@@ -1,169 +1,89 @@
 const puppeteer = require("puppeteer-core");
-const express = require("express");
 require('dotenv').config();
 const axios = require('axios');
 
-var fs   = require('fs');
+const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
-async function test(requestUrl, browserPort) {
-  console.log(requestUrl);
-  console.log("使用ブラウザポート:", browserPort);
-  await axios.get(requestUrl, {
-    headers: {
-      'Authorization': `Bearer ${process.env.ACCESS_TOKEN}`
-    }
-  }).then(async (response) => {
-    if (response.status !== 201) {
-      for (var i = 0; i < response.data.Items.length; i++) {
-        var itemCode = response.data.Items[i].Item.itemCode;
-        var itemName = response.data.Items[i].Item.itemName;
-        var catchcopy = response.data.Items[i].Item.catchcopy;
-        var description = response.data.Items[i].Item.itemCaption;
-        console.log((i + 1).toString() + "件目スタート");
-        console.log(itemCode);
-        console.log(description);
-        await post(itemCode, description, itemName, catchcopy, browserPort);
-        console.log("完了");
-        await sleep(5000)
-        // break
-      }
-    }
-  }).catch((error) => {
-    console.error("=== APIリクエストエラー ===");
-    console.error("エラーメッセージ:", error.message);
-    if (error.response) {
-      console.error("ステータスコード:", error.response.status);
-      console.error("レスポンスデータ:", JSON.stringify(error.response.data, null, 2));
-      console.error("レスポンスヘッダー:", JSON.stringify(error.response.headers, null, 2));
-    } else if (error.request) {
-      console.error("リクエストが送信されましたが、レスポンスがありません");
-      console.error("リクエスト情報:", error.request);
-    } else {
-      console.error("エラー詳細:", error);
-    }
-    console.error("========================");
-    return;
-  });
+function logError(context, error) {
+  console.error(`=== ${context}エラー ===`);
+  console.error("エラーメッセージ:", error.message);
+  if (error.response) {
+    console.error("ステータスコード:", error.response.status);
+    console.error("レスポンスデータ:", JSON.stringify(error.response.data, null, 2));
+    console.error("レスポンスヘッダー:", JSON.stringify(error.response.headers, null, 2));
+  } else if (error.request) {
+    console.error("リクエストが送信されましたが、レスポンスがありません");
+    console.error("リクエスト情報:", error.request);
+  } else {
+    console.error("エラー詳細:", error);
+  }
+  console.error("========================");
 }
 
-// test(20);
-var args = [
-  20,
-  30,
-  40
-]
-var age = args[Math.floor(Math.random()* args.length)];
-(async () => {
-  // アカウント1の処理（ポート9222）
+function buildRakutenApiUrl(appId, age, page) {
+  return `https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=${appId}&age=${age}&sex=1&carrier=0&page=${page}&accessKey=${process.env.ACCESS_TOKEN}`;
+}
+
+async function fetchRakutenRankingItems(requestUrl, browserPort) {
+  console.log(requestUrl);
+  console.log("使用ブラウザポート:", browserPort);
+
   try {
-    console.log("=== アカウント1の処理を開始 ===");
-    var random = Math.floor(Math.random() * 34) + 1;
-    var requestUrl = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID
-    + "&age=" + age + "&sex=1&carrier=0&page=" + random + "&accessKey=" + process.env.ACCESS_TOKEN;
-    await test(requestUrl, 9222); // ポート9222を指定
-    console.log("=== アカウント1の処理完了 ===");
+    const response = await axios.get(requestUrl, {
+      headers: {
+        'Authorization': `Bearer ${process.env.ACCESS_TOKEN}`
+      }
+    });
+
+    if (response.status !== 201 && response.data.Items) {
+      for (let i = 0; i < response.data.Items.length; i++) {
+        const item = response.data.Items[i].Item;
+        console.log((i + 1).toString() + "件目スタート");
+        console.log(item.itemCode);
+        console.log(item.itemCaption);
+
+        await postItemToRakutenRoom(item.itemCode, item.itemCaption, item.itemName, item.catchcopy, browserPort);
+        console.log("完了");
+        await sleep(5000);
+      }
+    }
   } catch (error) {
-    console.error("=== アカウント1のエラー ===");
-    console.error("エラーメッセージ:", error.message);
-    console.error("エラー詳細:", error);
-    console.error("========================");
+    logError("APIリクエスト", error);
   }
+}
 
-  // アカウント2の処理（ポート9223）
-  try {
-    console.log("=== アカウント2の処理を開始 ===");
-    var random2 = Math.floor(Math.random() * 34) + 1;
-    var requestUrl2 = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=" + process.env.RAKUTEN_APP_ID
-    + "&age=" + age + "&sex=1&carrier=0&page=" + random2 + "&accessKey=" + process.env.ACCESS_TOKEN;
-    await test(requestUrl2, 9223); // ポート9223を指定
-    console.log("=== アカウント2の処理完了 ===");
-  } catch (error) {
-    console.error("=== アカウント2のエラー ===");
-    console.error("エラーメッセージ:", error.message);
-    console.error("エラー詳細:", error);
-    console.error("========================");
-  }
-})();
-
-
-
-
-// test(40);
-
-
-// function delay(time) {
-//   return new Promise(function(resolve) { 
-//       setTimeout(resolve, time)
-//   });
-// }
-const sleep = milliseconds =>
-  new Promise(resolve =>
-    setTimeout(resolve, milliseconds)
-  );
-
-async function post(itemCode, description, itemName, catchcopy, browserPort = 9222) {
+async function postItemToRakutenRoom(itemCode, description, itemName, catchcopy, browserPort = 9222) {
   let page = null;
+
   try {
-    // 既存のブラウザに接続（指定されたポートに接続）
     const browser = await puppeteer.connect({
       browserURL: `http://localhost:${browserPort}`,
       defaultViewport: null
     });
 
     page = await browser.newPage();
-
     const url = `https://room.rakuten.co.jp/mix?itemcode=${itemCode}&scid=we_room_upc60`;
+
     console.log("ページに移動中");
     console.log(url);
 
     await page.setDefaultNavigationTimeout(30000);
     await page.goto(url);
-
     console.log("ページ読み込み完了");
 
-    // ログイン処理は削除（既にログイン済みを前提）
-    // コレクト画面の読み込みを待つ
-    await page.waitForSelector("#collect-content", {
-      visible: true,
-    });
+    await page.waitForSelector("#collect-content", { visible: true });
     console.log("コレクト画面表示確認");
 
-    // コレ！済みの場合は、処理を終了
-    let modalElement = null;
-    try {
-      await page.waitForSelector(".modal-dialog-container", {
-        visible: true,
-        timeout: 500,
-      });
-      modalElement = await page.$(".modal-dialog-container");
-      console.log("おおおお");
-    } catch (error) { }
-    if (modalElement) {
+    if (await isAlreadyCollected(page)) {
       console.log("「すでにコレしている商品です」のため処理を終了");
       await page.close();
       return;
     }
-    console.log("かかかか");
-    var descriptionCut = itemName + catchcopy + description.substring(0, 200) + " #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場";
-    console.log(descriptionCut);
-    //　投稿処理
-    await page.waitForSelector("#collect-content", {
-      visible: true,
-    });
-    await page.click("#collect-content");
-    await page.evaluate((text) => {
-      const element = document.querySelector("#collect-content");
-      element.value = text;
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-    }, descriptionCut);
 
-    await page.waitForSelector("button", { visible: true });
-    console.log("きききき");
-    await page.click('xpath=//*[@id="scroller"]/div[4]/div[6]/div[1]/button', {
-      visible: true,
-    });
+    const postContent = buildPostContent(itemName, catchcopy, description);
+    console.log(postContent);
 
-    // ページだけを閉じて、ブラウザは開いたままにする
+    await submitCollectForm(page, postContent);
     await page.close();
   } catch (error) {
     console.error("=== Puppeteer処理エラー ===");
@@ -171,34 +91,58 @@ async function post(itemCode, description, itemName, catchcopy, browserPort = 92
     console.error("エラーメッセージ:", error.message);
     console.error("エラー詳細:", error);
     console.error("========================");
-    // エラー時もタブを閉じる
+
     if (page) {
       try {
         await page.close();
-      } catch (closeError) {
-        // ページが既に閉じている場合などのエラーは無視
-      }
+      } catch (closeError) {}
     }
-    return;
   }
-
-
 }
 
+async function isAlreadyCollected(page) {
+  try {
+    await page.waitForSelector(".modal-dialog-container", { visible: true, timeout: 500 });
+    return await page.$(".modal-dialog-container") !== null;
+  } catch (error) {
+    return false;
+  }
+}
 
-// const app = express();
+function buildPostContent(itemName, catchcopy, description) {
+  return itemName + catchcopy + description.substring(0, 200) + " #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場";
+}
 
-// app.get("/", (req, res) => {
-//     try {
-//         test()
-//         console.log("ログ定期実行")
+async function submitCollectForm(page, content) {
+  await page.waitForSelector("#collect-content", { visible: true });
+  await page.click("#collect-content");
+  await page.evaluate((text) => {
+    const element = document.querySelector("#collect-content");
+    element.value = text;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }, content);
 
-//     } catch (err) {
-//         console.log(err);
-//     }
-//     res.send('get');
-// });
+  await page.waitForSelector("button", { visible: true });
+  await page.click('xpath=//*[@id="scroller"]/div[4]/div[6]/div[1]/button', { visible: true });
+}
 
+async function processAccount(accountName, appId, browserPort) {
+  try {
+    console.log(`=== ${accountName}の処理を開始 ===`);
 
-// const PORT = process.env.PORT || 3000;
-// app.listen(PORT);
+    const ages = [20, 30, 40];
+    const age = ages[Math.floor(Math.random() * ages.length)];
+    const page = Math.floor(Math.random() * 34) + 1;
+    const requestUrl = buildRakutenApiUrl(appId, age, page);
+
+    await fetchRakutenRankingItems(requestUrl, browserPort);
+    console.log(`=== ${accountName}の処理完了 ===`);
+  } catch (error) {
+    logError(accountName, error);
+  }
+}
+
+(async () => {
+  await processAccount("アカウント1", process.env.RAKUTEN_APP_ID, 9222);
+  await processAccount("アカウント2", process.env.RAKUTEN_APP_ID2, 9223);
+})();
