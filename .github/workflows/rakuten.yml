@@ -4,7 +4,17 @@ on:
   schedule:
     # 日本時間 8時・12時・18時・23時 に実行（UTC +9時間）
     - cron: '0 23,3,9,14 * * *'
-  workflow_dispatch: # 手動実行も可能
+  workflow_dispatch:
+    inputs:
+      account:
+        description: '実行するアカウント'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - account1
+          - account2
 
 jobs:
   post:
@@ -32,5 +42,6 @@ jobs:
           RAKUTEN_PASSWORD2: ${{ secrets.RAKUTEN_PASSWORD2 }}
           RAKUTEN_APP_ID2: ${{ secrets.RAKUTEN_APP_ID2 }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          RUN_ACCOUNT: ${{ github.event.inputs.account || 'both' }}
         run: node index.js
         working-directory: github-actions

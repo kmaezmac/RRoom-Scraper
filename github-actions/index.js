@@ -27,7 +27,7 @@ async function loginToRakuten(browser, userId, password) {
   try {
     console.log(`  ログイン開始: ${userId}`);
     const loginUrl = 'https://login.account.rakuten.com/sso/authorize?client_id=rakuten_room_web&redirect_uri=https://room.rakuten.co.jp/common/callback&scope=openid&response_type=code';
-    await page.goto(loginUrl, { waitUntil: 'networkidle2' });
+    await page.goto(loginUrl, { waitUntil: 'load' });
 
     // ユーザーID入力
     await page.waitForSelector('#user_id');
@@ -40,7 +40,7 @@ async function loginToRakuten(browser, userId, password) {
 
     // 次へボタン押下 → ログイン完了まで待機
     await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.waitForNavigation({ waitUntil: 'load' }),
       page.click('#cta011'),
     ]);
 
@@ -166,6 +166,12 @@ async function processAccount(accountName, userId, password, appId) {
 }
 
 (async () => {
-  await processAccount("アカウント1", process.env.RAKUTEN_USER_ID, process.env.RAKUTEN_PASSWORD, process.env.RAKUTEN_APP_ID);
-  await processAccount("アカウント2", process.env.RAKUTEN_USER_ID2, process.env.RAKUTEN_PASSWORD2, process.env.RAKUTEN_APP_ID2);
+  const runAccount = process.env.RUN_ACCOUNT || 'both';
+
+  if (runAccount === 'both' || runAccount === 'account1') {
+    await processAccount("アカウント1", process.env.RAKUTEN_USER_ID, process.env.RAKUTEN_PASSWORD, process.env.RAKUTEN_APP_ID);
+  }
+  if (runAccount === 'both' || runAccount === 'account2') {
+    await processAccount("アカウント2", process.env.RAKUTEN_USER_ID2, process.env.RAKUTEN_PASSWORD2, process.env.RAKUTEN_APP_ID2);
+  }
 })();
