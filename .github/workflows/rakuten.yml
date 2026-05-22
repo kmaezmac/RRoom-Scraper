@@ -30,6 +30,10 @@ jobs:
         run: npm install
         working-directory: github-actions
 
+      - name: Playwright ブラウザをインストール
+        run: npx playwright install chromium --with-deps
+        working-directory: github-actions
+
       - name: スクリプトを実行
         env:
           RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
