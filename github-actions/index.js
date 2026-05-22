@@ -35,7 +35,7 @@ async function handleLoginIfRedirected(page, userId, password, returnUrl) {
   await sleep(2000);
   console.log('  ログイン完了');
 
-  await page.goto(returnUrl, { waitUntil: 'load' });
+  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
   await sleep(3000);
 }
 
@@ -74,7 +74,7 @@ async function postItemToRakutenRoom(itemCode, description, itemName, catchcopy,
     console.log("ページに移動中");
     console.log(url);
 
-    await page.goto(url, { waitUntil: 'load' });
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
 
     await handleLoginIfRedirected(page, userId, password, url);
 
