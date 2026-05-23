@@ -208,7 +208,18 @@ async function postItemToRakutenRoomPw(itemCode, description, itemName, catchcop
 
     console.log("ページ読み込み完了");
 
-    await page.waitForSelector("#collect-content", { state: 'visible' });
+    // #collect-content とコレ済みモーダルのどちらが先に出るか待つ
+    const appeared = await Promise.race([
+      page.waitForSelector("#collect-content", { state: 'visible', timeout: 15000 }).then(() => 'content'),
+      page.waitForSelector(".modal-dialog-container", { state: 'visible', timeout: 15000 }).then(() => 'modal'),
+    ]);
+
+    if (appeared === 'modal') {
+      console.log("「すでにコレしている商品です」のため処理を終了");
+      await page.close();
+      return;
+    }
+
     // item_keyがセットされるまで待つ（商品データの非同期取得完了を確認）
     try {
       await page.waitForFunction(
@@ -222,13 +233,6 @@ async function postItemToRakutenRoomPw(itemCode, description, itemName, catchcop
       console.log('item_key待機タイムアウト、そのまま続行');
     }
     console.log("コレクト画面表示確認");
-
-    try {
-      await page.waitForSelector(".modal-dialog-container", { state: 'visible', timeout: 500 });
-      console.log("「すでにコレしている商品です」のため処理を終了");
-      await page.close();
-      return;
-    } catch { }
 
     const postContent = buildPostContent(itemName, catchcopy, description);
     console.log(postContent);
