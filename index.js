@@ -148,9 +148,119 @@ async function submitCollectForm(page, content) {
   await page.click('xpath=//*[@id="scroller"]/div[4]/div[6]/div[1]/button', { visible: true });
 }
 
+async function performFollow(browserPort) {
+  let page = null;
+  const TARGET = 20;
+  let followed = 0;
+  console.log('フォロー処理開始');
+
+  try {
+    const browser = await puppeteer.connect({
+      browserURL: `http://localhost:${browserPort}`,
+      defaultViewport: null
+    });
+    page = await browser.newPage();
+    await page.goto('https://room.rakuten.co.jp/search/user?keyword=&follower=&items=&rank=');
+    await sleep(2000);
+
+    while (followed < TARGET) {
+      // フォロー中でないボタン（"フォロー"spanがng-hideを持たない）を1件クリック
+      const clicked = await page.evaluate(() => {
+        const buttons = document.querySelectorAll('.border-button');
+        for (const btn of buttons) {
+          const followSpan = btn.querySelector('span.follow.icon-follow');
+          if (followSpan && !followSpan.classList.contains('ng-hide')) {
+            btn.click();
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (clicked) {
+        followed++;
+        console.log(`フォロー: ${followed}/${TARGET}件`);
+        await sleep(500);
+      } else {
+        const prevHeight = await page.evaluate(() => document.body.scrollHeight);
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await sleep(2000);
+        const newHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (newHeight === prevHeight) {
+          console.log('これ以上フォロー可能なユーザーがいません');
+          break;
+        }
+      }
+    }
+
+    console.log(`フォロー完了: ${followed}件`);
+  } catch (error) {
+    console.error("フォロー処理エラー:", error.message);
+  } finally {
+    if (page) {
+      try { await page.close(); } catch (e) {}
+    }
+  }
+}
+
+async function performLike(browserPort) {
+  let page = null;
+  const TARGET = 20;
+  let liked = 0;
+  console.log('いいね処理開始');
+
+  try {
+    const browser = await puppeteer.connect({
+      browserURL: `http://localhost:${browserPort}`,
+      defaultViewport: null
+    });
+    page = await browser.newPage();
+    await page.goto('https://room.rakuten.co.jp/discover/recommendItems');
+    await sleep(2000);
+
+    while (liked < TARGET) {
+      // isLikedクラスを持たない（未いいね）ボタンを1件クリック
+      const clicked = await page.evaluate(() => {
+        const buttons = document.querySelectorAll('a.icon-like.right:not(.isLiked):not(.isDisabled)');
+        if (buttons.length > 0) {
+          buttons[0].click();
+          return true;
+        }
+        return false;
+      });
+
+      if (clicked) {
+        liked++;
+        console.log(`いいね: ${liked}/${TARGET}件`);
+        await sleep(500);
+      } else {
+        const prevHeight = await page.evaluate(() => document.body.scrollHeight);
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await sleep(2000);
+        const newHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (newHeight === prevHeight) {
+          console.log('これ以上いいね可能なアイテムがいません');
+          break;
+        }
+      }
+    }
+
+    console.log(`いいね完了: ${liked}件`);
+  } catch (error) {
+    console.error("いいね処理エラー:", error.message);
+  } finally {
+    if (page) {
+      try { await page.close(); } catch (e) {}
+    }
+  }
+}
+
 async function processAccount(accountName, appId, browserPort) {
   try {
     console.log(`=== ${accountName}の処理を開始 ===`);
+
+    await performFollow(browserPort);
+    await performLike(browserPort);
 
     const ages = [20, 30, 40];
     const age = ages[Math.floor(Math.random() * ages.length)];
