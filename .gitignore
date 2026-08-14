@@ -133,3 +133,4 @@ dist
 *.env
 *.bat
 *.txt
+collected_history.json

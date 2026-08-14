@@ -1,6 +1,9 @@
 const { chromium } = require('playwright');
 require('dotenv').config({ path: '../.env' });
 const axios = require('axios');
+const OpenAI = require('openai');
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -18,8 +21,8 @@ function logError(context, error) {
   console.error("========================");
 }
 
-function buildRakutenApiUrl(appId, age, page) {
-  return `https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=${appId}&age=${age}&sex=1&carrier=0&page=${page}&accessKey=${process.env.ACCESS_TOKEN}`;
+function buildRakutenApiUrl(appId, sex, age, page) {
+  return `https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601?applicationId=${appId}&age=${age}&sex=${sex}&carrier=0&page=${page}&accessKey=${process.env.ACCESS_TOKEN}`;
 }
 
 async function handleLoginIfRedirected(page, userId, password, returnUrl) {
@@ -87,30 +90,38 @@ async function postItemToRakutenRoom(itemCode, description, itemName, catchcopy,
     ]);
 
     if (appeared === 'modal') {
-      console.log("「すでにコレしている商品です」のため処理を終了");
+      console.log("「すでにコレしている商品です」のためスキップ");
       await page.close();
       return;
     }
 
-    // item_keyがセットされるまで待つ（商品データの非同期取得完了を確認）
+    // content が先に出た場合でもモーダルが続いて出ることがあるため追加チェック
+    try {
+      await page.waitForSelector(".modal-dialog-container", { state: 'visible', timeout: 1000 });
+      console.log("「すでにコレしている商品です」のためスキップ");
+      await page.close();
+      return;
+    } catch { }
+
+    // 完了ボタンが有効になるまで待つ（商品データ読み込み完了の確認）
     try {
       await page.waitForFunction(
         () => {
-          const el = document.querySelector('input[name="item_key"]');
-          return el && el.value !== '';
+          const btn = document.querySelector('.collect-btn');
+          return btn && !btn.disabled;
         },
         { timeout: 10000 }
       );
     } catch {
-      console.log('item_key待機タイムアウト、そのまま続行');
+      console.log('ボタン有効化待機タイムアウト、そのまま続行');
     }
     console.log("コレクト画面表示確認");
 
-    const postContent = buildPostContent(itemName, catchcopy, description);
+    const postContent = await buildPostContent(itemName, catchcopy, description);
     console.log(postContent);
 
     await page.fill('#collect-content', postContent);
-    await page.click('.collect-btn');
+    await page.click('.collect-btn', { force: true });
     await sleep(3000);
     console.log("投稿完了");
     await page.close();
@@ -132,8 +143,23 @@ async function isAlreadyCollected(page) {
   }
 }
 
-function buildPostContent(itemName, catchcopy, description) {
-  return itemName + catchcopy + description.substring(0, 200) + " #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場";
+async function buildPostContent(itemName, catchcopy, description) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "user",
+          content: `楽天ROOMの投稿文を作成してください。\n商品名: ${itemName}\nキャッチコピー: ${catchcopy}\n商品説明: ${description.substring(0, 300)}\n\n条件:\n- 300文字以内\n- 魅力が伝わる自然な文章\n- 最後に関連するハッシュタグを5〜8個\n- 文章とハッシュタグのみ出力（説明不要）`
+        }
+      ],
+      max_completion_tokens: 600,
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (error) {
+    console.error("OpenAI APIエラー、デフォルト文章を使用:", error.message);
+    return itemName + catchcopy + description.substring(0, 200) + " #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場";
+  }
 }
 
 async function processAccount(accountName, appId, userId, password) {
@@ -146,10 +172,14 @@ async function processAccount(accountName, appId, userId, password) {
   try {
     console.log(`=== ${accountName}の処理を開始 ===`);
 
-    const ages = [20, 30, 40];
-    const age = ages[Math.floor(Math.random() * ages.length)];
+    const sexOptions = [0, 1, 2];
+    const ageOptions = [10, 20, 30, 40, 50];
+    const sex = sexOptions[Math.floor(Math.random() * sexOptions.length)];
+    const age = ageOptions[Math.floor(Math.random() * ageOptions.length)];
     const page = Math.floor(Math.random() * 34) + 1;
-    const requestUrl = buildRakutenApiUrl(appId, age, page);
+    const sexLabel = ['全体', '女性', '男性'][sex];
+    console.log(`性別: ${sexLabel}, 年代: ${age}代, ページ: ${page}`);
+    const requestUrl = buildRakutenApiUrl(appId, sex, age, page);
 
     await fetchRakutenRankingItems(requestUrl, context, userId, password);
     console.log(`=== ${accountName}の処理完了 ===`);
