@@ -134,3 +134,11 @@ dist
 *.bat
 *.txt
 collected_history.json
+.DS_Store
+
+# Cloud sessions and generated reports (never commit credentials)
+**/.state/
+**/reports/
+**/playwright-report/
+**/test-results/
+*.enc

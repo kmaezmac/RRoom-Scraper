@@ -1,51 +1,101 @@
 name: 楽天ROOM自動投稿
 
 on:
-  # schedule:
-  #   # 日本時間 7,9,11,13,15,17,19,21,23時に実行（UTC +9時間）
-  #   - cron: '0 22,0,2,4,6,8,10,12,14 * * *'
+  schedule:
+    # JST 07:00,09:00,11:00,13:00,15:00,17:00,19:00,21:00,23:00
+    - cron: '0 0,2,4,6,8,10,12,14,22 * * *'
   workflow_dispatch:
     inputs:
       account:
-        description: '実行するアカウント'
+        description: 実行するアカウント
         required: true
-        default: 'both'
+        default: all
         type: choice
-        options:
-          - both
-          - account1
-          - account2
+        options: [all, account1, account2, account3]
+      mode:
+        description: diagnoseはAPI・ログイン・投稿画面の確認のみ
+        required: true
+        default: diagnose
+        type: choice
+        options: [diagnose, run]
+      max_items:
+        description: ランキング取得件数の上限（1〜30、通常30）
+        required: true
+        default: '30'
+        type: string
+
+permissions:
+  contents: read
+
+# Serialize all accounts, manual runs, and scheduled runs against the same cache.
+concurrency:
+  group: rakuten-room
+  cancel-in-progress: false
 
 jobs:
   post:
-    runs-on: ubuntu-latest
-
+    # Enable only after a successful diagnostic and initial posting check.
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULE == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: github-actions
+    env:
+      RUN_ACCOUNT: ${{ inputs.account || 'all' }}
+      RUN_MODE: ${{ inputs.mode || 'run' }}
+      MAX_ITEMS: ${{ inputs.max_items || '30' }}
+      RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
+      RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
+      RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+      RAKUTEN_USER_ID2: ${{ secrets.RAKUTEN_USER_ID2 }}
+      RAKUTEN_PASSWORD2: ${{ secrets.RAKUTEN_PASSWORD2 }}
+      RAKUTEN_APP_ID2: ${{ secrets.RAKUTEN_APP_ID2 }}
+      RAKUTEN_USER_ID3: ${{ secrets.RAKUTEN_USER_ID3 }}
+      RAKUTEN_PASSWORD3: ${{ secrets.RAKUTEN_PASSWORD3 }}
+      RAKUTEN_APP_ID3: ${{ secrets.RAKUTEN_APP_ID3 }}
+      ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      SESSION_ENCRYPTION_KEY: ${{ secrets.SESSION_ENCRYPTION_KEY }}
+      RAKUTEN_SESSION: ${{ secrets.RAKUTEN_SESSION }}
+      RAKUTEN_SESSION2: ${{ secrets.RAKUTEN_SESSION2 }}
+      RAKUTEN_SESSION3: ${{ secrets.RAKUTEN_SESSION3 }}
+      USE_OPENAI: ${{ vars.USE_OPENAI || 'false' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - name: リポジトリをチェックアウト
-        uses: actions/checkout@v4
-
-      - name: Node.js をセットアップ
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
-
-      - name: 依存パッケージをインストール
-        run: npm install
-        working-directory: github-actions
-
-      - name: Playwright ブラウザをインストール
-        run: npx playwright install chromium --with-deps
-        working-directory: github-actions
-
-      - name: スクリプトを実行
-        env:
-          RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
-          RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
-          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
-          RAKUTEN_USER_ID2: ${{ secrets.RAKUTEN_USER_ID2 }}
-          RAKUTEN_PASSWORD2: ${{ secrets.RAKUTEN_PASSWORD2 }}
-          RAKUTEN_APP_ID2: ${{ secrets.RAKUTEN_APP_ID2 }}
-          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          RUN_ACCOUNT: ${{ github.event.inputs.account || 'both' }}
-        run: node index.js
-        working-directory: github-actions
+          cache: npm
+          cache-dependency-path: github-actions/package-lock.json
+      - name: 依存パッケージを固定バージョンでインストール
+        run: npm ci
+      - name: 必須設定を確認
+        run: node index.js --check-config
+      - name: 暗号化済みセッションを復元
+        uses: actions/cache/restore@v4
+        with:
+          path: github-actions/.state/*.enc
+          key: room-session-v1-${{ vars.SESSION_VERSION || '1' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            room-session-v1-${{ vars.SESSION_VERSION || '1' }}-
+      - name: ヘッドレスChromiumをインストール
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: 実行
+        run: npm start
+      - name: 更新した暗号化セッションを保存
+        if: always() && hashFiles('github-actions/.state/*.enc') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: github-actions/.state/*.enc
+          key: room-session-v1-${{ vars.SESSION_VERSION || '1' }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: 件数とエラー分類のみを保存（Cookie・画面・HTMLを含めない）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: github-actions/reports/summary.json
+          if-no-files-found: ignore
+          retention-days: 7
