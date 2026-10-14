@@ -74,3 +74,29 @@ test('CLI configuration failure exits nonzero without leaking environment values
   assert.match(result.stderr, /CONFIG/);
   assert.ok(!result.stderr.includes('secret-do-not-print'));
 });
+test('browser errors are classified without exposing URL, ID, DOM or credentials', async () => {
+  const { step, operationOf, readWhileNavigating } = require('../lib/diagnostics');
+  const secret = 'https://room.rakuten.co.jp/room_private/?token=secret-user';
+  for (const [message, code] of [
+    [`strict mode violation: ${secret}`, 'LOCATOR_AMBIGUOUS'],
+    [`Execution context was destroyed ${secret}`, 'PAGE_NAVIGATING'],
+    [`Target page, context or browser has been closed ${secret}`, 'BROWSER_CLOSED'],
+    [`Element is not an input, textarea or contenteditable element ${secret}`, 'FORM_NOT_EDITABLE'],
+  ]) {
+    const result = safeError(new Error(message));
+    assert.ok(result.startsWith(code)); assert.ok(!result.includes(secret)); assert.ok(!result.includes('room_private'));
+  }
+  let clicks = 0;
+  await assert.rejects(step('collect.submit', () => { clicks++; throw new Error(`Execution context was destroyed ${secret}`); }), error => operationOf(error) === 'collect.submit');
+  assert.equal(clicks, 1); // Never retry mutation after an ambiguous error.
+  let reads = 0;
+  assert.equal(await readWhileNavigating(() => { if (++reads === 1) throw new Error('Execution context was destroyed'); return 'ready'; }), 'ready');
+  assert.equal(operationOf({ operation: secret }), 'unknown');
+});
+test('ROOM product query keeps the literal colon required by its legacy parser', () => {
+  const { mixUrl } = require('../lib/room');
+  const url = new URL(mixUrl('shop:12345'));
+  const legacyValue = url.search.slice(1).split('&').find(part => part.startsWith('itemcode=')).split('=')[1];
+  assert.equal(legacyValue, 'shop:12345');
+  assert.equal(new URL(mixUrl('shop:item&extra=value')).searchParams.has('extra'), false);
+});
