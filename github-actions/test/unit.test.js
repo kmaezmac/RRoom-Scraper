@@ -6,7 +6,48 @@ const path = require('node:path');
 const { readConfig, safeError } = require('../lib/config');
 const { encrypt, decrypt, saveState, loadState } = require('../lib/state');
 const { fetchRanking, buildPostContent, limitPostContent } = require('../lib/ranking');
+const { assessRun, renderSummary } = require('../lib/report');
 const base = { SESSION_ENCRYPTION_KEY: 'ab'.repeat(32), RAKUTEN_APP_ID: 'app', ACCESS_TOKEN: 'key' };
+
+test('confirmed posts followed by HTTP 503 keep the job successful and the error visible', () => {
+  const account = { skipped: 0, followAttempts: 0, likeAttempts: 20, warnings: [] };
+  const result = assessRun('run', [
+    { ...account, account: 'account1', ok: false, stage: 'post', posted: 6, skipped: 4, operation: 'collect.submit', error: 'POST_HTTP: HTTP 503' },
+    { ...account, account: 'account2', ok: true, stage: 'complete', posted: 7, skipped: 22 },
+    { ...account, account: 'account3', ok: true, stage: 'complete', posted: 2, skipped: 28 },
+  ]);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.status, 'warning');
+  assert.equal(result.posted, 15);
+  assert.equal(result.results[0].status, 'warning');
+  assert.equal(result.results[0].ok, false);
+  const markdown = renderSummary({ mode: 'run', elapsedSeconds: 4280, ...result });
+  assert.match(markdown, /警告あり（ジョブ成功）/);
+  assert.match(markdown, /account1 \| 警告あり \| post \| 6/);
+  assert.match(markdown, /collect.submit \/ POST_HTTP: HTTP 503/);
+});
+test('zero-post failures stay fatal; posting on another account does not hide failed accounts', () => {
+  const failed = { account: 'account1', ok: false, posted: 0, stage: 'login', error: 'AUTH_FAILED', warnings: [] };
+  const skipped = { account: 'account2', ok: true, posted: 0, skipped: 30, stage: 'complete', warnings: [] };
+  assert.equal(assessRun('run', [failed, skipped]).exitCode, 1);
+  const partial = assessRun('run', [failed, { ...skipped, posted: 1 }]);
+  assert.equal(partial.exitCode, 0);
+  assert.equal(partial.status, 'warning');
+  assert.equal(partial.results[0].status, 'failure');
+  assert.equal(assessRun('run', []).exitCode, 1);
+});
+test('all duplicates are successful; social-only warnings are nonfatal; diagnostics remain strict', () => {
+  const complete = { ok: true, posted: 0, skipped: 30, stage: 'complete', warnings: [] };
+  const warning = { ...complete, ok: false, stage: 'partial', warnings: ['follow / SOCIAL_NOT_READY'] };
+  assert.equal(assessRun('run', [complete]).status, 'success');
+  assert.equal(assessRun('run', [warning]).status, 'warning');
+  assert.equal(assessRun('run', [warning]).exitCode, 0);
+  assert.equal(assessRun('diagnose', [warning]).exitCode, 1);
+  assert.equal(assessRun('diagnose', [{ ...complete, posted: 0 }]).exitCode, 0);
+  const uncertain = { ...complete, ok: false, stage: 'post', error: 'POST_UNCONFIRMED' };
+  assert.equal(assessRun('run', [uncertain]).exitCode, 1);
+  assert.equal(assessRun('run', [{ ...uncertain, posted: 1 }]).status, 'warning');
+});
 
 test('defaults retain three accounts and no paid generator; diagnostic is default', () => {
   const config = readConfig(base);

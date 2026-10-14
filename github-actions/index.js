@@ -7,6 +7,7 @@ const { loadState, saveState } = require('./lib/state');
 const { fetchRanking, buildPostContent, sleep } = require('./lib/ranking');
 const { openCollect, prepareCollect, diagnoseSocial, postItem, performFollow, performLike } = require('./lib/room');
 const { snapshot, operationOf } = require('./lib/diagnostics');
+const { assessRun, renderSummary } = require('./lib/report');
 
 async function processAccount(browser, config, account) {
   const result = { account: account.name, mode: config.mode, stage: 'session', posted: 0, skipped: 0, followAttempts: 0, likeAttempts: 0, warnings: [], ok: false };
@@ -86,15 +87,15 @@ async function main() {
     // Sequential execution keeps the existing account order and API pacing.
     for (const account of config.accounts) results.push(await processAccount(browser, config, account));
   } finally { await browser.close(); }
-  const summary = { mode: config.mode, elapsedSeconds: Math.round((Date.now() - started) / 1000), results };
+  const summary = { mode: config.mode, elapsedSeconds: Math.round((Date.now() - started) / 1000), ...assessRun(config.mode, results) };
   const reportDir = path.join(__dirname, 'reports');
   await fs.mkdir(reportDir, { recursive: true });
   await fs.writeFile(path.join(reportDir, 'summary.json'), JSON.stringify(summary, null, 2));
   if (process.env.GITHUB_STEP_SUMMARY) {
-    const rows = results.map(r => `| ${r.account} | ${r.ok ? '成功' : '失敗'} | ${r.stage} | ${r.posted} | ${r.skipped} | ${r.followAttempts} | ${r.likeAttempts} | ${[r.operation, r.error, ...r.warnings].filter(Boolean).join(' / ')} |`);
-    await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `\nモード: ${config.mode} / 所要時間: ${summary.elapsedSeconds}秒\n\n| Account | 結果 | 段階 | 投稿確認 | コレ済み | フォロー操作 | いいね操作 | エラー |\n|---|---|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
+    await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, renderSummary(summary));
   }
-  if (results.some(result => !result.ok)) process.exitCode = 1;
+  if (summary.status === 'warning') console.warn('一部の処理にエラー・警告があります。投稿結果と詳細はSummaryを確認してください（ジョブは成功扱い）');
+  process.exitCode = summary.exitCode;
 }
 if (require.main === module) main().catch(error => { console.error(safeError(error)); process.exitCode = 1; });
 module.exports = { processAccount, main };
