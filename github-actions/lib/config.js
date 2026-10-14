@@ -38,7 +38,17 @@ function readConfig(env = process.env) {
 // Only our fixed messages and error codes are written to public Actions logs.
 function safeError(error) {
   if (error instanceof RunError) return `${error.code}: ${error.message}`;
-  if (error?.name === 'TimeoutError') return 'TIMEOUT: ページの読込または要素の確認が時間切れです';
-  return 'UNEXPECTED: 予期しないエラーです（機密情報保護のため詳細は出力しません）';
+  const { errorKind } = require('./diagnostics');
+  const kind = errorKind(error);
+  const messages = {
+    LOCATOR_AMBIGUOUS: '操作対象が複数見つかりました',
+    PAGE_NAVIGATING: '画面遷移中に読み取りが中断されました',
+    BROWSER_CLOSED: 'ブラウザまたはページが閉じられました',
+    FORM_NOT_EDITABLE: '対象の入力欄は編集できません',
+    TYPE_ERROR: '処理に必要なデータ型が想定と異なります',
+    TIMEOUT: 'ページの読込または要素の確認が時間切れです',
+    UNEXPECTED: '未分類のエラーです（操作名とUI件数を確認してください）',
+  };
+  return `${kind}: ${messages[kind]}`;
 }
 module.exports = { readConfig, RunError, safeError };

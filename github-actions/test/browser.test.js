@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { navigate, inspectPage, openCollect, postItem, performFollow, performLike } = require('../lib/room');
+const { prepareCollect, waitForSocial, navigate, inspectPage, openCollect, postItem, performFollow, performLike } = require('../lib/room');
 const { processAccount } = require('../index');
 let browser;
 before(async () => { browser = await chromium.launch({ headless: true }); });
@@ -80,12 +80,15 @@ test('diagnostic runner verifies login and persists encrypted session without so
     await context.route('**/*', async route => {
       if (route.request().method() !== 'GET') writes++;
       if (route.request().url().includes('/discover/')) social++;
-      await route.fulfill({ contentType: 'text/html; charset=utf-8', body: form });
+      const url = route.request().url();
+      const body = url.includes('recommendUsers') ? '<button aria-label="フォローする">フォロー</button>'
+        : url.includes('recommendItems') ? '<a class="icon-like right">いいね</a>' : form;
+      await route.fulfill({ contentType: 'text/html; charset=utf-8', body });
     });
     return context;
   }};
   const result = await processAccount(wrappedBrowser, { mode: 'diagnose', stateDir, key: 'ab'.repeat(32), accessKey: 'test', maxItems: 30 }, { name: 'account1', appId: 'test' });
-  assert.equal(result.ok, true); assert.equal(result.posted, 0); assert.equal(writes, 0); assert.equal(social, 0);
+  assert.equal(result.ok, true); assert.equal(result.posted, 0); assert.equal(writes, 0); assert.equal(social, 2);
   assert.ok((await fs.readFile(path.join(stateDir, 'account1.enc'), 'utf8')).length > 0);
 });
 test('an unconfirmed submission fails and is never clicked a second time', async t => {
@@ -112,4 +115,28 @@ test('slow document and parser-blocking scripts get separate timeout budgets', a
   const response = await navigate(page, 'https://room.rakuten.co.jp/', 800);
   assert.equal(response.status(), 200);
   assert.equal(await page.evaluate(() => window.ready), true);
+});
+test('collect ignores hidden duplicates and styled wrappers without choosing arbitrary buttons', async t => {
+  const page = await fixture(t, () => `<textarea id="collect-content" style="display:none"></textarea><div class="collect-btn"><textarea id="collect-content"></textarea><button class="collect-btn">完了</button></div><button class="collect-btn" style="display:none">完了</button>`);
+  await page.goto('https://room.rakuten.co.jp/mix');
+  await prepareCollect(page, '入力のみ');
+  assert.equal(await page.locator('textarea:visible').inputValue(), '入力のみ');
+  await page.setContent('<textarea id="collect-content"></textarea><textarea id="collect-content"></textarea>');
+  await assert.rejects(prepareCollect(page, '内容'), error => error.code === 'COLLECT_FIELD_COUNT');
+});
+test('social readiness waits for asynchronous lists and fails clearly on missing controls', async t => {
+  const page = await fixture(t, () => '<script>setTimeout(()=>{document.body.innerHTML=\'<button aria-label="フォローする">フォロー</button>\'},500)</script>');
+  await page.goto('https://room.rakuten.co.jp/discover/recommendUsers');
+  assert.equal((await waitForSocial(page, 'follow', 3000)).followCandidates, 1);
+  await page.setContent('<p>empty</p>');
+  await assert.rejects(waitForSocial(page, 'like', 50), error => error.code === 'SOCIAL_NOT_READY');
+});
+test('UI diagnostics emit only predefined labels and counts, never user data', async t => {
+  const { snapshot } = require('../lib/diagnostics');
+  const page = await fixture(t, () => '<input id="user_id" value="secret-user"><a href="/room_private/items">private-name</a><textarea id="collect-content">private-caption</textarea>');
+  await page.goto('https://room.rakuten.co.jp/mix?itemcode=private-product');
+  const data = await snapshot(page);
+  assert.equal(data.screen, 'collect'); assert.equal(data.collectFields, 1);
+  const output = JSON.stringify(data);
+  for (const value of ['secret-user', 'private-name', 'room_private', 'private-product', 'private-caption', 'https://']) assert.ok(!output.includes(value));
 });
