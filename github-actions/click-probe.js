@@ -6,7 +6,7 @@ const { fetchRanking, buildPostContent } = require('./lib/ranking');
 const { openCollect, prepareCollect, diagnoseSocial } = require('./lib/room');
 const { snapshot } = require('./lib/diagnostics');
 async function main() {
-  const config = readConfig({ ...process.env, RUN_MODE: 'diagnose', MAX_ITEMS: '1' });
+  const config = readConfig({ ...process.env, RUN_ACCOUNT: 'account3', RUN_MODE: 'diagnose', MAX_ITEMS: '1' });
   const browser = await chromium.launch({ headless: true });
   try {
     for (const account of config.accounts) {
@@ -15,7 +15,7 @@ async function main() {
         context = await browser.newContext({ storageState: await loadState(config, account), locale: 'ja-JP', timezoneId: 'Asia/Tokyo', viewport: { width: 1365, height: 900 } });
         context.setDefaultTimeout(30000); context.setDefaultNavigationTimeout(30000);
         page = await context.newPage();
-        const [item] = await fetchRanking(account, config);
+        const [item] = await fetchRanking(account, config, { random: () => 0.5 });
         await openCollect(page, item.itemCode, account);
         await diagnoseSocial(page);
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -28,6 +28,16 @@ async function main() {
         console.error(`${account.name}: ${safeError(error)}`);
         console.error(`${account.name}: UI ${JSON.stringify(page ? await snapshot(page) : { screen: 'unavailable' })}`);
         process.exitCode = 1;
+        if (page) {
+          await page.setViewportSize({ width: 1365, height: 1600 });
+          try {
+            await page.locator('button.collect-btn:visible, input.collect-btn[type="submit"]:visible').click({ trial: true, timeout: 5000 });
+            console.log(`${account.name}: 高さ1600でtrial成功（未送信）`);
+          } catch (next) {
+            console.error(`${account.name}: 高さ1600でも ${safeError(next)}`);
+            console.error(`${account.name}: UI ${JSON.stringify(await snapshot(page))}`);
+          }
+        }
       } finally { await context?.close(); }
     }
   } finally { await browser.close(); }

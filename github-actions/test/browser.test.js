@@ -162,3 +162,18 @@ test('UI diagnostics emit only predefined labels and counts, never user data', a
   const output = JSON.stringify(data);
   for (const value of ['secret-user', 'private-name', 'room_private', 'private-product', 'private-caption', 'https://']) assert.ok(!output.includes(value));
 });
+test('UI diagnostics distinguish an enabled button from an obstructed click without leaking overlay content', async t => {
+  const { snapshot } = require('../lib/diagnostics');
+  const page = await fixture(t, () => form + '<div id="private-account" style="position:fixed;inset:0;z-index:99999;background:white">private-caption https://private.invalid</div>');
+  await page.goto('https://room.rakuten.co.jp/mix');
+  let data = await snapshot(page);
+  assert.equal(data.enabledSubmitButtons, 1);
+  assert.equal(data.submitInViewport, true);
+  assert.equal(data.submitReceivesPointer, false);
+  assert.equal(data.pointerBlocker, 'div');
+  assert.ok(!JSON.stringify(data).includes('private'));
+  await page.locator('#private-account').evaluate(el => el.remove());
+  data = await snapshot(page);
+  assert.equal(data.submitReceivesPointer, true);
+  assert.equal(data.pointerBlocker, 'none');
+});
