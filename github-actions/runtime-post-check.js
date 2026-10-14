@@ -15,6 +15,30 @@ async function main() {
   try {
     context = await browser.newContext({ storageState: await loadState(config, account), locale: 'ja-JP', timezoneId: 'Asia/Tokyo', viewport: { width: 1365, height: 900 } });
     page = await context.newPage();
+    page.on('response', async response => {
+      try {
+        const url = new URL(response.url());
+        if (url.hostname !== 'room.rakuten.co.jp' || url.pathname !== '/api/collect' || response.request().method() !== 'POST') return;
+        const params = new URLSearchParams(response.request().postData() || '');
+        const body = await response.json().catch(() => null);
+        const serialized = JSON.stringify(body || {});
+        const known = ['content', 'item_key', 'name', 'pictures', 'bu', 'csrf_tkn'];
+        const facts = {
+          http: response.status(), json: !!body,
+          requestContentLength: (params.get('content') || '').length,
+          requestNameLength: (params.get('name') || '').length,
+          itemKeyPresent: !!params.get('item_key'), csrfPresent: url.searchParams.has('csrf_tkn') || params.has('csrf_tkn'),
+          codePresent: typeof body?.msg_code === 'string',
+          validationFields: known.filter(key => Object.hasOwn(body?.message || {}, key) || Object.hasOwn(body?.errors || {}, key)),
+          requiredError: /required|必須|必要/i.test(serialized),
+          lengthError: /length|文字数|長すぎ|長過ぎ/i.test(serialized),
+          csrfError: /csrf|token|トークン/i.test(serialized),
+          invalidError: /invalid|不正/i.test(serialized),
+          blockedError: /blocked|denied|制限|拒否/i.test(serialized),
+        };
+        console.log('account1: POST検証 ' + JSON.stringify(facts));
+      } catch { console.log('account1: POST検証 unavailable'); }
+    });
     const [item] = await fetchRanking(account, config);
     await openCollect(page, item.itemCode, account);
     authenticated = true;
