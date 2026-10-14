@@ -22,8 +22,8 @@ jobs:
       run:
         working-directory: github-actions
     env:
-      RUN_ACCOUNT: account2
-      RUN_MODE: diagnose
+      RUN_ACCOUNT: account1
+      RUN_MODE: run
       MAX_ITEMS: '1'
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
       RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
@@ -64,7 +64,7 @@ jobs:
       - name: ヘッドレスChromiumをインストール
         run: npx playwright install --with-deps chromium --only-shell
       - name: 実行
-        run: npm start
+        run: node runtime-post-check.js
       - name: 更新した暗号化セッションを保存
         if: always() && hashFiles('github-actions/.state/*.enc') != ''
         uses: actions/cache/save@v4

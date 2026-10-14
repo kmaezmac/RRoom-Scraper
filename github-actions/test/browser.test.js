@@ -9,7 +9,7 @@ const { processAccount } = require('../index');
 let browser;
 before(async () => { browser = await chromium.launch({ headless: true }); });
 after(async () => { await browser?.close(); });
-const form = '<textarea id="collect-content"></textarea><button class="collect-btn" onclick="fetch(\'/test-submit\', {method:\'POST\'})">完了</button>';
+const form = '<textarea id="collect-content"></textarea><button class="collect-btn" onclick="fetch(\'/api/collect\', {method:\'POST\'})">完了</button>';
 const duplicate = '<div class="modal-dialog-container">すでにコレしている商品です</div>';
 async function fixture(t, render) {
   const context = await browser.newContext();
@@ -29,7 +29,7 @@ test('classifies duplicate specifically, never treats every modal as collected',
 test('headless posting is confirmed only by re-reading ROOM duplicate state', async t => {
   let submitted = 0;
   const page = await fixture(t, url => {
-    if (url.pathname === '/test-submit') { submitted++; return 'ok'; }
+    if (url.pathname === '/api/collect') { submitted++; return 'ok'; }
     return submitted ? '<div class="modal-dialog-container">すでにコレ！している商品です</div>' : form;
   });
   assert.equal(await postItem(page, { itemCode: 'shop:item' }, '投稿内容', {}), 'posted');
@@ -46,6 +46,23 @@ test('unknown modal and missing auth stop without a mutation', async t => {
   });
   await assert.rejects(openCollect(page, 'shop:item', {}), error => error.code === 'AUTH_REQUIRED');
   assert.equal(writes, 0);
+});
+test('ROOM submission rejection is classified without response text or retries', async t => {
+  let submitted = 0;
+  const page = await fixture(t, url => {
+    if (url.pathname === '/api/collect') {
+      submitted++;
+      return { status: 400, contentType: 'application/json', body: JSON.stringify({ msg_code: 'R145', message: 'private-caption private-user https://private.invalid' }) };
+    }
+    return form;
+  });
+  await assert.rejects(postItem(page, { itemCode: 'shop:item' }, '内容', {}), error => {
+    assert.equal(error.code, 'POST_R145');
+    assert.equal(error.operation, 'collect.submit');
+    assert.ok(!error.message.includes('private'));
+    return true;
+  });
+  assert.equal(submitted, 1);
 });
 test('headless two-step login returns to collect form', async t => {
   let loggedIn = false;
@@ -94,7 +111,7 @@ test('diagnostic runner verifies login and persists encrypted session without so
 test('an unconfirmed submission fails and is never clicked a second time', async t => {
   let submitted = 0;
   const page = await fixture(t, url => {
-    if (url.pathname === '/test-submit') submitted++;
+    if (url.pathname === '/api/collect') submitted++;
     return form; // Simulate accepted click but no saved post.
   });
   await assert.rejects(postItem(page, { itemCode: 'shop:item' }, '内容', {}), error => error.code === 'POST_UNCONFIRMED');

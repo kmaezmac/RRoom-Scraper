@@ -132,8 +132,30 @@ async function postItem(page, item, content, account) {
   if (state === 'duplicate') return 'skipped';
   const text = typeof content === 'function' ? await content() : content;
   await prepareCollect(page, text);
+  // Observe the UI's own request. Never print its URL, payload or response body.
+  const responsePromise = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.hostname === 'room.rakuten.co.jp' && url.pathname === '/api/collect' && response.request().method() === 'POST';
+  }, { timeout: 30000 }).catch(() => null);
   // Only the visible, actual submit button; a styled wrapper is not a button.
   await step('collect.submit', () => page.locator('button.collect-btn:visible, input.collect-btn[type="submit"]:visible').click({ timeout: 15000 }));
+  const response = await responsePromise;
+  if (response) {
+    const body = await response.json().catch(() => null);
+    const messages = {
+      R133: 'すでにコレ済みの商品です',
+      R122: '投稿数が楽天ROOMの上限に達しています',
+      R119: '商品が削除されています', R120: '商品が削除されています', R143: '商品が削除されています',
+      R145: '投稿文に楽天ROOMで使用できない文字列が含まれています',
+      R106: '投稿文に楽天ROOMで使用できない文字・記号が含まれています',
+    };
+    if (body?.msg_code === 'R133') return 'skipped';
+    await step('collect.submit', async () => {
+      if (Object.hasOwn(messages, body?.msg_code)) throw new RunError(`POST_${body.msg_code}`, messages[body.msg_code]);
+      if (response.status() >= 400) throw new RunError('POST_HTTP', `楽天ROOMが送信を拒否しました（HTTP ${response.status()}）`);
+      if (body?.status === 'error' || body?.status === 'fail' || body?.msg_code) throw new RunError('POST_REJECTED', '楽天ROOMが送信エラーを返しました（本文は非公開）');
+    });
+  }
   // A click alone does not prove persistence. Reopen this product and require
   // ROOM's own duplicate acknowledgement. Never retry an uncertain submission.
   let verification;
@@ -145,7 +167,9 @@ async function postItem(page, item, content, account) {
     await verification.waitForFunction(() => /すでにコレ[\s!！\[\]]*(?:している|してい|済み|されています)/.test(document.body?.innerText || ''), undefined, { timeout: 15000 });
     return 'posted';
   } catch {
-    throw new RunError('POST_UNCONFIRMED', '投稿結果を確認できません。重複送信を避けるため、このアカウントを停止します。ROOMで直近の投稿を確認してください');
+    const error = new RunError('POST_UNCONFIRMED', '投稿結果を確認できません。重複送信を避けるため、このアカウントを停止します。ROOMで直近の投稿を確認してください');
+    error.operation = 'collect.verify';
+    throw error;
   } finally {
     await verification?.close();
   }
