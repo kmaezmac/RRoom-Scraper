@@ -22,7 +22,7 @@ jobs:
       run:
         working-directory: github-actions
     env:
-      RUN_ACCOUNT: account1
+      RUN_ACCOUNT: all
       RUN_MODE: diagnose
       MAX_ITEMS: '1'
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}

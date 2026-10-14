@@ -64,7 +64,7 @@ async function openCollect(page, itemCode, account) {
       await step('login.user', () => page.locator('#user_id:visible').fill(account.userId));
       await step('login.next', () => page.locator('#cta001:visible').click());
       try { await page.locator('#password_current:visible').waitFor({ state: 'visible', timeout: 15000 }); }
-      catch { checkState(await readWhileNavigating(() => page.evaluate(inspectPage))); throw new RunError('AUTH_FAILED', 'パスワード画面に進めません。ID・追加認証を確認してください'); }
+      catch { checkState(await readWhileNavigating(() => page.evaluate(inspectPage))); const error = new RunError('AUTH_USER_STEP', 'パスワード画面に進めません。ID・追加認証を確認してください'); error.operation = 'login.next'; throw error; }
     }
     assertLoginHost(page);
     await step('login.password', () => page.locator('#password_current:visible').fill(account.password));
@@ -73,7 +73,7 @@ async function openCollect(page, itemCode, account) {
       await page.waitForURL(url => url.hostname === 'room.rakuten.co.jp', { timeout: 60000, waitUntil: 'commit' });
       await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
     }); }
-    catch { checkState(await readWhileNavigating(() => page.evaluate(inspectPage))); throw new RunError('AUTH_FAILED', 'ログインできません。ID/パスワード・追加認証・クラウドIP制限を確認してください'); }
+    catch { checkState(await readWhileNavigating(() => page.evaluate(inspectPage))); const error = new RunError('AUTH_RETURN', '送信後にROOMへの復帰を確認できません。認証情報・追加認証・接続状態を確認してください'); error.operation = 'login.return'; throw error; }
     await navigate(page, mixUrl(itemCode));
     state = await waitForState(page);
     checkState(state);
