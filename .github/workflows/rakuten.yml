@@ -43,7 +43,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULE == 'true'
     runs-on: ubuntu-24.04
     # Up to 90 candidates, including reopening each new post to verify it.
-    timeout-minutes: 110
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: github-actions
