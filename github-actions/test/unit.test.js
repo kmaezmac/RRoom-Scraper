@@ -5,17 +5,19 @@ const os = require('node:os');
 const path = require('node:path');
 const { readConfig, safeError } = require('../lib/config');
 const { encrypt, decrypt, saveState, loadState } = require('../lib/state');
-const { fetchRanking, buildPostContent } = require('../lib/ranking');
+const { fetchRanking, buildPostContent, limitPostContent } = require('../lib/ranking');
 const base = { SESSION_ENCRYPTION_KEY: 'ab'.repeat(32), RAKUTEN_APP_ID: 'app', ACCESS_TOKEN: 'key' };
 
 test('defaults retain three accounts and no paid generator; diagnostic is default', () => {
   const config = readConfig(base);
   assert.deepEqual(config.accounts.map(a => a.name), ['account1', 'account2', 'account3']);
   assert.equal(config.mode, 'diagnose'); assert.equal(config.useOpenAI, false); assert.equal(config.maxItems, 30);
+  assert.equal(config.maxPosts, 30);
+  assert.equal(readConfig({ ...base, MAX_ITEMS: '30', MAX_POSTS: '1' }).maxPosts, 1);
   assert.equal(readConfig({ ...base, RUN_ACCOUNT: 'account3', RAKUTEN_APP_ID3: 'third' }).accounts[0].appId, 'third');
 });
 test('invalid configuration fails before browser launch', () => {
-  for (const env of [{}, { ...base, RUN_ACCOUNT: 'typo' }, { ...base, RUN_MODE: 'typo' }, { ...base, MAX_ITEMS: '0' }, { ...base, MAX_ITEMS: '31' }, { ...base, USE_OPENAI: 'true' }]) assert.throws(() => readConfig(env));
+  for (const env of [{}, { ...base, RUN_ACCOUNT: 'typo' }, { ...base, RUN_MODE: 'typo' }, { ...base, MAX_ITEMS: '0' }, { ...base, MAX_ITEMS: '31' }, { ...base, MAX_POSTS: '0' }, { ...base, MAX_POSTS: '31' }, { ...base, MAX_POSTS: 'NaN' }, { ...base, USE_OPENAI: 'true' }]) assert.throws(() => readConfig(env));
 });
 test('session authenticated encryption rejects wrong keys, account swaps and tampering', () => {
   const state = { cookies: [{ value: 'private-cookie' }], origins: [] };
@@ -64,6 +66,14 @@ test('fallback content does not require OpenAI credentials', async () => {
   assert.equal(await buildPostContent({ itemName: '商品', catchcopy: '便利', itemCaption: '説明' }, { useOpenAI: false }), '商品便利説明 #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場');
   assert.ok(!safeError(new Error('password secretCookie')).includes('secretCookie'));
 });
+test('long product text fits ROOM UTF-16 limit, keeps hashtags, and preserves surrogate pairs', async () => {
+  const text = await buildPostContent({ itemName: '長い商品名'.repeat(120), catchcopy: '説明'.repeat(200), itemCaption: '😀'.repeat(200) }, { useOpenAI: false });
+  assert.equal(text.length, 500);
+  assert.ok(text.endsWith(' #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場'));
+  assert.equal(limitPostContent('あ'.repeat(499) + '😀'), 'あ'.repeat(499));
+  assert.equal(limitPostContent('😀'.repeat(251)), '😀'.repeat(250));
+  assert.equal(limitPostContent('短い文章'), '短い文章');
+});
 test('CLI configuration failure exits nonzero without leaking environment values', () => {
   const { spawnSync } = require('node:child_process');
   const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'index.js'), '--check-config'], {
@@ -82,6 +92,9 @@ test('browser errors are classified without exposing URL, ID, DOM or credentials
     [`Execution context was destroyed ${secret}`, 'PAGE_NAVIGATING'],
     [`Target page, context or browser has been closed ${secret}`, 'BROWSER_CLOSED'],
     [`Element is not an input, textarea or contenteditable element ${secret}`, 'FORM_NOT_EDITABLE'],
+    [`${secret} intercepts pointer events`, 'CLICK_OBSTRUCTED'],
+    [`element is outside of the viewport ${secret}`, 'CLICK_OUTSIDE_VIEWPORT'],
+    [`element is not stable ${secret}`, 'CLICK_UNSTABLE'],
   ]) {
     const result = safeError(new Error(message));
     assert.ok(result.startsWith(code)); assert.ok(!result.includes(secret)); assert.ok(!result.includes('room_private'));

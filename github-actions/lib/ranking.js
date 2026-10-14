@@ -2,6 +2,16 @@ const axios = require('axios');
 const { RunError } = require('./config');
 const ENDPOINT = 'https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// ROOM's browser validator counts UTF-16 units (String.length), not code points.
+// Iterate code points so trimming does not leave half of a surrogate pair.
+function limitPostContent(text, limit = 500) {
+  let output = '';
+  for (const character of text) {
+    if (output.length + character.length > limit) break;
+    output += character;
+  }
+  return output;
+}
 
 async function fetchRanking(account, config, { get = axios.get, random = Math.random, wait = sleep } = {}) {
   // Windows版と同じランキング条件。
@@ -27,7 +37,9 @@ async function fetchRanking(account, config, { get = axios.get, random = Math.ra
 }
 async function buildPostContent(item, config) {
   const { itemName = '', catchcopy = '', itemCaption = '' } = item;
-  const fallback = itemName + catchcopy + itemCaption.substring(0, 200) + ' #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場';
+  const tags = ' #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場';
+  const body = itemName + catchcopy + limitPostContent(itemCaption, 200);
+  const fallback = limitPostContent(body, 500 - tags.length) + tags;
   if (!config.useOpenAI) return fallback;
   try {
     const OpenAI = require('openai');
@@ -37,7 +49,7 @@ async function buildPostContent(item, config) {
       messages: [{ role: 'user', content: `楽天ROOMの投稿文を作成してください。\n商品名: ${itemName}\nキャッチコピー: ${catchcopy}\n商品説明: ${itemCaption.substring(0, 300)}\n\n条件:\n- 300文字以内\n- 魅力が伝わる自然な文章\n- 最後に関連するハッシュタグを5〜8個\n- 文章とハッシュタグのみ出力（説明不要）` }],
       max_tokens: 600,
     });
-    return completion.choices[0].message.content.trim() || fallback;
+    return limitPostContent(completion.choices[0].message.content.trim()) || fallback;
   } catch { console.warn('OpenAI API失敗: 既存の定型文を使用します'); return fallback; }
 }
-module.exports = { fetchRanking, buildPostContent, sleep };
+module.exports = { fetchRanking, buildPostContent, limitPostContent, sleep };
