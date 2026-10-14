@@ -1,21 +1,34 @@
-// Public network check only; no credentials, cookies, or account mutations.
+// Public network check only: no dotenv, credentials, stored sessions or mutations.
 const { chromium } = require('playwright');
 const { inspectPage } = require('./lib/room');
-(async () => {
+const TARGET = 'https://room.rakuten.co.jp/';
+const code = error => error?.message?.match(/net::[A-Z_]+/)?.[0] || error?.cause?.code || error?.name || 'UNKNOWN';
+async function probe() {
+  const start = Date.now();
+  try {
+    const response = await fetch(TARGET, { signal: AbortSignal.timeout(20000) });
+    console.log(JSON.stringify({ check: 'http-document', status: response.status, elapsedMs: Date.now() - start }));
+    await response.body?.cancel();
+  } catch (error) { console.log(JSON.stringify({ check: 'http-document', error: code(error), elapsedMs: Date.now() - start })); }
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ locale: 'ja-JP' });
-    const response = await page.goto('https://room.rakuten.co.jp/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    console.log(JSON.stringify({ check: 'public-room', status: response?.status(), host: new URL(page.url()).hostname }));
-    if (response?.status() !== 200) throw new Error('ROOM returned non-200 status');
-    const login = page.getByRole('link', { name: /ログイン/ }).first();
-    if (await login.isVisible()) {
-      await login.click();
-      await page.waitForLoadState('domcontentloaded');
-      await page.locator('#user_id').waitFor({ state: 'visible', timeout: 15000 });
-      console.log(JSON.stringify({ check: 'login-page', host: new URL(page.url()).hostname, state: await page.evaluate(inspectPage) }));
-    } else {
-      console.log('ログインリンク未検出。認証の診断にはSecrets登録後のdiagnoseを使用してください');
+    const failedHosts = new Set();
+    page.on('requestfailed', request => failedHosts.add(new URL(request.url()).hostname));
+    page.on('response', response => {
+      if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
+        console.log(JSON.stringify({ check: 'browser-document', status: response.status(), host: new URL(response.url()).hostname }));
+      }
+    });
+    // Separate initial document connectivity from parser-blocking subresources.
+    const response = await page.goto(TARGET, { waitUntil: 'commit', timeout: 30000 });
+    if (response?.status() !== 200) throw new Error('HTTP_STATUS');
+    try { await page.waitForLoadState('domcontentloaded', { timeout: 30000 }); }
+    catch (error) {
+      console.log(JSON.stringify({ check: 'dom-ready', error: code(error), failedHosts: [...failedHosts].slice(0, 15) }));
+      throw error;
     }
+    console.log(JSON.stringify({ check: 'public-room', status: response.status(), state: await page.evaluate(inspectPage), failedHosts: [...failedHosts].slice(0, 15) }));
   } finally { await browser.close(); }
-})().catch(error => { console.error(`公開ページ確認失敗: ${error.name}`); process.exitCode = 1; });
+}
+probe().catch(error => { console.error(`公開ページ確認失敗: ${code(error)}`); process.exitCode = 1; });
