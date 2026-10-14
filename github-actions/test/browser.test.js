@@ -62,6 +62,18 @@ test('a click timeout after sending still verifies the saved result without rese
   assert.equal(await postItem(page, { itemCode: 'shop:item' }, '内容', {}), 'posted');
   assert.equal(submitted, 1);
 });
+test('long content is shortened before ROOM validates and disables its submit button', async t => {
+  let submitted = 0, length = 0;
+  const page = await fixture(t, (url, request) => {
+    if (url.pathname === '/api/collect') { submitted++; length = request.postData().length; return 'ok'; }
+    return submitted ? duplicate : `<div class="collect-form"><div class="item-name">商品</div>
+      <textarea id="collect-content" oninput="document.querySelector('button').disabled=this.value.length>500"></textarea>
+      <button class="collect-btn" disabled onclick="fetch('/api/collect',{method:'POST',body:document.querySelector('textarea').value})">完了</button></div>`;
+  });
+  assert.equal(await postItem(page, { itemCode: 'shop:item' }, 'あ'.repeat(700), {}), 'posted');
+  assert.equal(submitted, 1);
+  assert.equal(length, 500);
+});
 test('unknown modal and missing auth stop without a mutation', async t => {
   let writes = 0;
   const page = await fixture(t, (url, request) => {

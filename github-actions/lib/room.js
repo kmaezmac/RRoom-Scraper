@@ -1,5 +1,5 @@
 const { RunError } = require('./config');
-const { sleep } = require('./ranking');
+const { sleep, limitPostContent } = require('./ranking');
 const { step, readWhileNavigating, inspectControls } = require('./diagnostics');
 const ROOM = 'https://room.rakuten.co.jp';
 // ROOM's legacy query reader does not URL-decode itemcode. Encoding ':' makes
@@ -114,7 +114,7 @@ async function prepareCollect(page, content) {
   await step('collect.fill', async () => {
     const fields = page.locator('#collect-content:visible');
     if (await fields.count() !== 1) throw new RunError('COLLECT_FIELD_COUNT', '表示中の投稿入力欄が1個ではありません');
-    await fields.fill(content);
+    await fields.fill(limitPostContent(content));
   });
   await step('collect.ready', async () => {
     try {

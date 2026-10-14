@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { readConfig, safeError } = require('../lib/config');
 const { encrypt, decrypt, saveState, loadState } = require('../lib/state');
-const { fetchRanking, buildPostContent } = require('../lib/ranking');
+const { fetchRanking, buildPostContent, limitPostContent } = require('../lib/ranking');
 const base = { SESSION_ENCRYPTION_KEY: 'ab'.repeat(32), RAKUTEN_APP_ID: 'app', ACCESS_TOKEN: 'key' };
 
 test('defaults retain three accounts and no paid generator; diagnostic is default', () => {
@@ -65,6 +65,14 @@ test('empty or malformed rankings do not count as success', async () => {
 test('fallback content does not require OpenAI credentials', async () => {
   assert.equal(await buildPostContent({ itemName: '商品', catchcopy: '便利', itemCaption: '説明' }, { useOpenAI: false }), '商品便利説明 #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場');
   assert.ok(!safeError(new Error('password secretCookie')).includes('secretCookie'));
+});
+test('long product text fits ROOM UTF-16 limit, keeps hashtags, and preserves surrogate pairs', async () => {
+  const text = await buildPostContent({ itemName: '長い商品名'.repeat(120), catchcopy: '説明'.repeat(200), itemCaption: '😀'.repeat(200) }, { useOpenAI: false });
+  assert.equal(text.length, 500);
+  assert.ok(text.endsWith(' #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場'));
+  assert.equal(limitPostContent('あ'.repeat(499) + '😀'), 'あ'.repeat(499));
+  assert.equal(limitPostContent('😀'.repeat(251)), '😀'.repeat(250));
+  assert.equal(limitPostContent('短い文章'), '短い文章');
 });
 test('CLI configuration failure exits nonzero without leaking environment values', () => {
   const { spawnSync } = require('node:child_process');

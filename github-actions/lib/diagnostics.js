@@ -46,6 +46,8 @@ function inspectControls() {
     visibleDialogs: count('.dialog-container, .guidance-popup, [role="dialog"]'),
     loadedItemNames: [...document.querySelectorAll('.collect-form .item-name')].filter(el => visible(el) && el.textContent.trim() && !el.textContent.includes('{{')).length,
     collectFields: fields.length,
+    contentOverLimit: fields.some(el => (el.value || '').length > 500),
+    contentLengthError: [...document.querySelectorAll('.collect-contents .warning')].some(el => visible(el) && el.textContent.trim() === '文字数オーバーです'),
     editableFields: fields.filter(el => el.matches('textarea,input,[contenteditable="true"]') && !el.disabled && !el.readOnly).length,
     submitButtons: buttons.length,
     enabledSubmitButtons: buttons.filter(el => !el.disabled && el.getAttribute('aria-disabled') !== 'true').length,
