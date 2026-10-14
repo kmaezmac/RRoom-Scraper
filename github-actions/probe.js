@@ -14,7 +14,10 @@ async function probe() {
   try {
     const page = await browser.newPage({ locale: 'ja-JP' });
     const failedHosts = new Set();
-    page.on('requestfailed', request => failedHosts.add(new URL(request.url()).hostname));
+    const pending = new Map();
+    page.on('request', request => pending.set(request, { host: new URL(request.url()).hostname, type: request.resourceType() }));
+    page.on('requestfinished', request => pending.delete(request));
+    page.on('requestfailed', request => { pending.delete(request); failedHosts.add(new URL(request.url()).hostname); });
     page.on('response', response => {
       if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) {
         console.log(JSON.stringify({ check: 'browser-document', status: response.status(), host: new URL(response.url()).hostname }));
@@ -25,7 +28,7 @@ async function probe() {
     if (response?.status() !== 200) throw new Error('HTTP_STATUS');
     try { await page.waitForLoadState('domcontentloaded', { timeout: 30000 }); }
     catch (error) {
-      console.log(JSON.stringify({ check: 'dom-ready', error: code(error), failedHosts: [...failedHosts].slice(0, 15) }));
+      console.log(JSON.stringify({ check: 'dom-ready', error: code(error), pending: [...pending.values()].slice(0, 15), failedHosts: [...failedHosts].slice(0, 15) }));
       throw error;
     }
     console.log(JSON.stringify({ check: 'public-room', status: response.status(), state: await page.evaluate(inspectPage), failedHosts: [...failedHosts].slice(0, 15) }));

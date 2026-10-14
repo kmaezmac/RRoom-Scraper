@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { chromium } = require('playwright');
-const { inspectPage, openCollect, postItem, performFollow, performLike } = require('../lib/room');
+const { navigate, inspectPage, openCollect, postItem, performFollow, performLike } = require('../lib/room');
 const { processAccount } = require('../index');
 let browser;
 before(async () => { browser = await chromium.launch({ headless: true }); });
@@ -101,4 +101,15 @@ test('an unconfirmed submission fails and is never clicked a second time', async
 test('CAPTCHA stops before credentials or posting', async t => {
   const page = await fixture(t, () => '<input autocomplete="one-time-code">');
   await assert.rejects(openCollect(page, 'shop:item', { userId: 'test', password: 'test' }), error => error.code === 'AUTH_CHALLENGE');
+});
+
+test('slow document and parser-blocking scripts get separate timeout budgets', async t => {
+  const page = await fixture(t, async url => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    if (url.pathname === '/slow.js') return { contentType: 'text/javascript', body: 'window.ready = true;' };
+    return '<script src="/slow.js"></script><p>ready</p>';
+  });
+  const response = await navigate(page, 'https://room.rakuten.co.jp/', 800);
+  assert.equal(response.status(), 200);
+  assert.equal(await page.evaluate(() => window.ready), true);
 });

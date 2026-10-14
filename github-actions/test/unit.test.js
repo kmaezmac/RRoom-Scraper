@@ -64,3 +64,13 @@ test('fallback content does not require OpenAI credentials', async () => {
   assert.equal(await buildPostContent({ itemName: '商品', catchcopy: '便利', itemCaption: '説明' }, { useOpenAI: false }), '商品便利説明 #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場');
   assert.ok(!safeError(new Error('password secretCookie')).includes('secretCookie'));
 });
+test('CLI configuration failure exits nonzero without leaking environment values', () => {
+  const { spawnSync } = require('node:child_process');
+  const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'index.js'), '--check-config'], {
+    env: { ...process.env, ...base, RUN_ACCOUNT: 'account1', RUN_MODE: 'invalid', RAKUTEN_PASSWORD: 'secret-do-not-print' },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CONFIG/);
+  assert.ok(!result.stderr.includes('secret-do-not-print'));
+});

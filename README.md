@@ -108,6 +108,9 @@ Actions実行ページの **Summary** に段階・投稿確認数・コレ済み
 | `SESSION_DECRYPT` | 暗号鍵・アカウント・キャッシュ世代の不一致等 |
 | `ROOM_MODAL` | コレ済み以外のメッセージ。ROOMで内容を確認 |
 | `POST_UNCONFIRMED` | 送信後の保存確認ができず停止。投稿済みの可能性があるため、再実行前にROOMで確認 |
+| `NAVIGATION_CONNECT` | ページ本体への接続が失敗・時間切れ。クラウド側の接続を確認 |
+| `NAVIGATION_DOM` | ページ本体は応答したが、スクリプト等の読み込みが時間切れ |
+| `NAVIGATION_HTTP` | ページ本体がHTTPエラーを返した |
 | `TIMEOUT` | ページ読み込み・画面要素の待機が時間切れ。画面変更や接続拒否の場合もある |
 
 失敗したアカウントの後も残りのアカウントを処理し、最後にジョブ全体を失敗にします。GitHubのActions失敗通知を有効にしておくと停止に気づけます。自動再試行は読み取り専用のランキングAPIだけで、投稿を無条件に再送しません。GitHub側で強制終了された直前の投稿は結果不明になり得ます。
@@ -116,7 +119,7 @@ Actions実行ページの **Summary** に段階・投稿確認数・コレ済み
 
 ## 無料サービスの選定
 
-2026-10-13確認。今回のようなブラウザ付きの定期バッチは、既存のNode.jsをそのまま動かせるGitHub Actionsを採用しています。
+2026-10-14確認。今回のようなブラウザ付きの定期バッチは、既存のNode.jsをそのまま動かせるGitHub Actionsを採用しています。
 
 | 候補 | このアプリでの制約 |
 |---|---|
@@ -131,6 +134,12 @@ Actions実行ページの **Summary** に段階・投稿確認数・コレ済み
 - [Vercel cron制約](https://vercel.com/docs/cron-jobs/usage-and-pricing)
 - [Cloudflare Browser Run料金](https://developers.cloudflare.com/browser-run/pricing/)
 - [楽天ランキングAPI仕様](https://webservice.rakuten.co.jp/documentation/ichiba-item-ranking)
+
+## 実際に確認した範囲（2026-10-14）
+
+GitHub ActionsのUbuntu 24.04 / Node.js 24上で、自動テスト16項目と楽天ROOM公開ページのHTTP 200応答を確認しました（[実行ログ](https://github.com/kmaezmac/RRoom-Scraper/actions/runs/38493402510)）。これは楽天の実アカウント認証・実投稿の検証ではありません。
+
+最初のクラウド接続テストは30秒でタイムアウトしました。再診断ではブラウザでページ本体の応答に約9秒、DOMの読み込み完了までさらに約21秒かかりました。実行環境からの読み込み遅延で従来の30秒を超える場合があるため、本番処理も「接続30秒」と「読み込み30秒」を別々に待つ方式に修正しました。アクセス拒否や追加認証は別の問題なので、Secrets登録後に確認する必要があります。
 
 ## ローカルでの確認
 

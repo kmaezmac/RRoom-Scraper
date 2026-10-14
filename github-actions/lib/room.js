@@ -18,6 +18,20 @@ function inspectPage() {
   return null;
 }
 
+// On hosted runners the document and its blocking scripts can each take
+// 10–25 seconds. Give each phase its own bounded timeout.
+async function navigate(page, url, timeout = 30000) {
+  let response;
+  try { response = await page.goto(url, { waitUntil: 'commit', timeout }); }
+  catch { throw new RunError('NAVIGATION_CONNECT', 'ページ本体への接続が失敗・時間切れになりました'); }
+  if (response && response.status() >= 400) {
+    throw new RunError('NAVIGATION_HTTP', `ページ取得失敗（HTTP ${response.status()}）。アクセス制限・メンテナンス等を確認してください`);
+  }
+  try { await page.waitForLoadState('domcontentloaded', { timeout }); }
+  catch { throw new RunError('NAVIGATION_DOM', 'ページ本体は応答しましたが、スクリプト等の読み込みが時間切れになりました'); }
+  return response;
+}
+
 async function waitForState(page, timeout = 30000) {
   const handle = await page.waitForFunction(inspectPage, undefined, { timeout });
   try { return await handle.jsonValue(); } finally { await handle.dispose(); }
@@ -34,7 +48,7 @@ function assertLoginHost(page) {
 }
 
 async function openCollect(page, itemCode, account) {
-  await page.goto(mixUrl(itemCode), { waitUntil: 'domcontentloaded' });
+  await navigate(page, mixUrl(itemCode));
   let state = await waitForState(page);
   checkState(state);
   if (state === 'user' || state === 'password') {
@@ -49,9 +63,9 @@ async function openCollect(page, itemCode, account) {
     assertLoginHost(page);
     await page.locator('#password_current').fill(account.password);
     await page.locator('#cta011').click();
-    try { await page.waitForURL(url => url.hostname === 'room.rakuten.co.jp', { timeout: 30000 }); }
+    try { await page.waitForURL(url => url.hostname === 'room.rakuten.co.jp', { timeout: 30000, waitUntil: 'commit' }); }
     catch { checkState(await page.evaluate(inspectPage)); throw new RunError('AUTH_FAILED', 'ログインできません。ID/パスワード・追加認証・クラウドIP制限を確認してください'); }
-    await page.goto(mixUrl(itemCode), { waitUntil: 'domcontentloaded' });
+    await navigate(page, mixUrl(itemCode));
     state = await waitForState(page);
     checkState(state);
   }
@@ -77,7 +91,7 @@ async function postItem(page, item, content, account) {
     await sleep(3000);
     // Keep the submitting page alive so navigation cannot abort its request.
     verification = await page.context().newPage();
-    await verification.goto(mixUrl(item.itemCode), { waitUntil: 'domcontentloaded' });
+    await navigate(verification, mixUrl(item.itemCode));
     await verification.waitForFunction(() => /すでにコレ(?:している|してい|！?済み|！?されています)/.test(document.body?.innerText || ''), undefined, { timeout: 15000 });
     return 'posted';
   } catch {
@@ -120,27 +134,27 @@ async function ensureSocialPage(page) {
   if (state === 'user' || state === 'password') throw new RunError('AUTH_EXPIRED', 'ログイン状態が失効しました');
 }
 async function performFollow(page) {
-  await page.goto(`${ROOM}/discover/recommendUsers`, { waitUntil: 'domcontentloaded' });
+  await navigate(page, `${ROOM}/discover/recommendUsers`);
   await sleep(3000);
   await ensureSocialPage(page);
   let count = await followFromCurrentPage(page, 20);
   if (count < 20) {
-    await page.goto(`${ROOM}/discover/recommendUsers`, { waitUntil: 'domcontentloaded' });
+    await navigate(page, `${ROOM}/discover/recommendUsers`);
     const name = page.locator('.name.ng-binding').first();
     try { await name.waitFor({ state: 'visible', timeout: 10000 }); }
     catch { return count; }
     await name.click();
-    await page.waitForURL(url => url.pathname.includes('/room_'));
+    await page.waitForURL(url => url.pathname.includes('/room_'), { waitUntil: 'commit' });
     const url = new URL(page.url());
     url.pathname = url.pathname.replace(/\/[^/]*$/, '/followers');
-    await page.goto(url.toString(), { waitUntil: 'domcontentloaded' });
+    await navigate(page, url.toString());
     await ensureSocialPage(page);
     count += await followFromCurrentPage(page, 20 - count);
   }
   return count;
 }
 async function performLike(page) {
-  await page.goto(`${ROOM}/discover/recommendItems`, { waitUntil: 'domcontentloaded' });
+  await navigate(page, `${ROOM}/discover/recommendItems`);
   await sleep(3000);
   await ensureSocialPage(page);
   let count = 0;
@@ -161,4 +175,4 @@ async function performLike(page) {
   }
   return count;
 }
-module.exports = { inspectPage, openCollect, postItem, performFollow, performLike, mixUrl };
+module.exports = { navigate, inspectPage, openCollect, postItem, performFollow, performLike, mixUrl };
