@@ -82,6 +82,9 @@ test('browser errors are classified without exposing URL, ID, DOM or credentials
     [`Execution context was destroyed ${secret}`, 'PAGE_NAVIGATING'],
     [`Target page, context or browser has been closed ${secret}`, 'BROWSER_CLOSED'],
     [`Element is not an input, textarea or contenteditable element ${secret}`, 'FORM_NOT_EDITABLE'],
+    [`${secret} intercepts pointer events`, 'CLICK_OBSTRUCTED'],
+    [`element is outside of the viewport ${secret}`, 'CLICK_OUTSIDE_VIEWPORT'],
+    [`element is not stable ${secret}`, 'CLICK_UNSTABLE'],
   ]) {
     const result = safeError(new Error(message));
     assert.ok(result.startsWith(code)); assert.ok(!result.includes(secret)); assert.ok(!result.includes('room_private'));
