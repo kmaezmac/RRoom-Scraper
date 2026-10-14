@@ -43,7 +43,7 @@ jobs:
         working-directory: github-actions
     env:
       RUN_ACCOUNT: ${{ inputs.account || 'all' }}
-      RUN_MODE: ${{ inputs.mode || 'run' }}
+      RUN_MODE: ${{ github.event_name == 'schedule' && 'run' || inputs.mode || 'diagnose' }}
       MAX_ITEMS: ${{ inputs.max_items || '30' }}
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
       RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
