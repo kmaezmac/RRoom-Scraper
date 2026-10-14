@@ -9,7 +9,7 @@ function errorKind(error) {
   if (error?.name === 'TypeError') return 'TYPE_ERROR';
   return 'UNEXPECTED';
 }
-const STEPS = new Set(['collect.open', 'collect.state', 'login.user', 'login.next', 'login.password', 'login.submit', 'login.return', 'collect.fill', 'collect.ready', 'collect.submit', 'collect.verify', 'follow.ready', 'like.ready']);
+const STEPS = new Set(['collect.open', 'collect.state', 'collect.item', 'login.user', 'login.next', 'login.password', 'login.submit', 'login.return', 'collect.fill', 'collect.ready', 'collect.submit', 'collect.verify', 'follow.ready', 'like.ready']);
 async function step(name, action) {
   try { return await action(); }
   catch (error) {
@@ -31,6 +31,7 @@ function inspectControls() {
   } else if (['login.account.rakuten.com', 'grp01.id.rakuten.co.jp'].includes(location.hostname)) screen = 'login';
   return {
     screen,
+    loadedItemNames: [...document.querySelectorAll('.collect-form .item-name')].filter(el => visible(el) && el.textContent.trim() && !el.textContent.includes('{{')).length,
     collectFields: fields.length,
     editableFields: fields.filter(el => el.matches('textarea,input,[contenteditable="true"]') && !el.disabled && !el.readOnly).length,
     submitButtons: buttons.length,

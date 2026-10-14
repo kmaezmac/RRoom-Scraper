@@ -9,7 +9,7 @@ const { processAccount } = require('../index');
 let browser;
 before(async () => { browser = await chromium.launch({ headless: true }); });
 after(async () => { await browser?.close(); });
-const form = '<textarea id="collect-content"></textarea><button class="collect-btn" onclick="fetch(\'/api/collect\', {method:\'POST\'})">完了</button>';
+const form = '<div class="collect-form"><div class="item-name">テスト商品</div><textarea id="collect-content"></textarea><button class="collect-btn" onclick="fetch(\'/api/collect\', {method:\'POST\'})">完了</button></div>';
 const duplicate = '<div class="modal-dialog-container">すでにコレしている商品です</div>';
 async function fixture(t, render) {
   const context = await browser.newContext();
@@ -46,6 +46,11 @@ test('unknown modal and missing auth stop without a mutation', async t => {
   });
   await assert.rejects(openCollect(page, 'shop:item', {}), error => error.code === 'AUTH_REQUIRED');
   assert.equal(writes, 0);
+});
+test('collect waits for product data even when the input and button are already visible', async t => {
+  const page = await fixture(t, () => form.replace('テスト商品', '') + '<script>setTimeout(()=>document.querySelector(".item-name").textContent="商品読込完了",1500)</script>');
+  assert.equal(await openCollect(page, 'shop:item', {}), 'form');
+  assert.equal(await page.locator('.item-name').textContent(), '商品読込完了');
 });
 test('ROOM submission rejection is classified without response text or retries', async t => {
   let submitted = 0;

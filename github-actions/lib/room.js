@@ -2,7 +2,9 @@ const { RunError } = require('./config');
 const { sleep } = require('./ranking');
 const { step, readWhileNavigating, inspectControls } = require('./diagnostics');
 const ROOM = 'https://room.rakuten.co.jp';
-const mixUrl = code => `${ROOM}/mix?${new URLSearchParams({ itemcode: code, scid: 'we_room_upc60' })}`;
+// ROOM's legacy query reader does not URL-decode itemcode. Encoding ':' makes
+// its product lookup request a literal %3A code and leaves the item empty.
+const mixUrl = code => `${ROOM}/mix?itemcode=${encodeURIComponent(code).replace(/%3A/gi, ':')}&scid=we_room_upc60`;
 
 // Runs inside Chromium. Never returns page text, cookies or input values to logs.
 function inspectPage() {
@@ -87,6 +89,20 @@ async function openCollect(page, itemCode, account) {
     state = await waitForState(page);
     checkState(state);
     if (!['form', 'duplicate'].includes(state)) throw new RunError('AUTH_EXPIRED', '投稿画面の読み込み中にログイン状態が変わりました');
+  }
+  if (state === 'form') {
+    await step('collect.item', async () => {
+      try {
+        await page.waitForFunction(() => {
+          if (/すでにコレ[\s!！\[\]]*(?:している|してい|済み|されています)/.test(document.body?.innerText || '')) return true;
+          return [...document.querySelectorAll('.collect-form .item-name')].some(el =>
+            !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length) && el.textContent.trim() && !el.textContent.includes('{{'));
+        }, undefined, { timeout: 30000 });
+      } catch { throw new RunError('COLLECT_ITEM_NOT_READY', '投稿対象の商品情報を読み込めません。入力欄だけの状態では送信しません'); }
+    });
+    state = await readWhileNavigating(() => page.evaluate(inspectPage));
+    checkState(state);
+    if (!['form', 'duplicate'].includes(state)) throw new RunError('COLLECT_ITEM_NOT_READY', '商品情報の読み込み後に投稿画面を確認できません');
   }
   return state;
 }

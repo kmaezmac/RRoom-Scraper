@@ -93,3 +93,10 @@ test('browser errors are classified without exposing URL, ID, DOM or credentials
   assert.equal(await readWhileNavigating(() => { if (++reads === 1) throw new Error('Execution context was destroyed'); return 'ready'; }), 'ready');
   assert.equal(operationOf({ operation: secret }), 'unknown');
 });
+test('ROOM product query keeps the literal colon required by its legacy parser', () => {
+  const { mixUrl } = require('../lib/room');
+  const url = new URL(mixUrl('shop:12345'));
+  const legacyValue = url.search.slice(1).split('&').find(part => part.startsWith('itemcode=')).split('=')[1];
+  assert.equal(legacyValue, 'shop:12345');
+  assert.equal(new URL(mixUrl('shop:item&extra=value')).searchParams.has('extra'), false);
+});
