@@ -12,7 +12,7 @@ function errorKind(error) {
   if (error?.name === 'TypeError') return 'TYPE_ERROR';
   return 'UNEXPECTED';
 }
-const STEPS = new Set(['collect.open', 'collect.state', 'collect.item', 'login.user', 'login.next', 'login.password', 'login.submit', 'login.return', 'collect.fill', 'collect.ready', 'collect.submit', 'collect.verify', 'follow.ready', 'like.ready']);
+const STEPS = new Set(['collect.open', 'collect.state', 'collect.item', 'login.user', 'login.next', 'login.password', 'login.submit', 'login.return', 'collect.fill', 'collect.ready', 'collect.actionable', 'collect.submit', 'collect.verify', 'follow.ready', 'like.ready']);
 async function step(name, action) {
   try { return await action(); }
   catch (error) {

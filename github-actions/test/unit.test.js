@@ -12,10 +12,12 @@ test('defaults retain three accounts and no paid generator; diagnostic is defaul
   const config = readConfig(base);
   assert.deepEqual(config.accounts.map(a => a.name), ['account1', 'account2', 'account3']);
   assert.equal(config.mode, 'diagnose'); assert.equal(config.useOpenAI, false); assert.equal(config.maxItems, 30);
+  assert.equal(config.maxPosts, 30);
+  assert.equal(readConfig({ ...base, MAX_ITEMS: '30', MAX_POSTS: '1' }).maxPosts, 1);
   assert.equal(readConfig({ ...base, RUN_ACCOUNT: 'account3', RAKUTEN_APP_ID3: 'third' }).accounts[0].appId, 'third');
 });
 test('invalid configuration fails before browser launch', () => {
-  for (const env of [{}, { ...base, RUN_ACCOUNT: 'typo' }, { ...base, RUN_MODE: 'typo' }, { ...base, MAX_ITEMS: '0' }, { ...base, MAX_ITEMS: '31' }, { ...base, USE_OPENAI: 'true' }]) assert.throws(() => readConfig(env));
+  for (const env of [{}, { ...base, RUN_ACCOUNT: 'typo' }, { ...base, RUN_MODE: 'typo' }, { ...base, MAX_ITEMS: '0' }, { ...base, MAX_ITEMS: '31' }, { ...base, MAX_POSTS: '0' }, { ...base, MAX_POSTS: '31' }, { ...base, MAX_POSTS: 'NaN' }, { ...base, USE_OPENAI: 'true' }]) assert.throws(() => readConfig(env));
 });
 test('session authenticated encryption rejects wrong keys, account swaps and tampering', () => {
   const state = { cookies: [{ value: 'private-cookie' }], origins: [] };

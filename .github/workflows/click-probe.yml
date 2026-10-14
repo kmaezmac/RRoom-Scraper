@@ -22,8 +22,9 @@ jobs:
         working-directory: github-actions
     env:
       RUN_ACCOUNT: all
-      RUN_MODE: diagnose
-      MAX_ITEMS: '1'
+      RUN_MODE: run
+      MAX_ITEMS: '30'
+      MAX_POSTS: '1'
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
       RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
       RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
@@ -63,7 +64,7 @@ jobs:
       - name: ヘッドレスChromiumをインストール
         run: npx playwright install --with-deps chromium --only-shell
       - name: 実行
-        run: node click-probe.js
+        run: npm start
       - name: 更新した暗号化セッションを保存
         if: always() && hashFiles('github-actions/.state/*.enc') != ''
         uses: actions/cache/save@v4

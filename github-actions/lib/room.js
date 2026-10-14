@@ -16,6 +16,9 @@ function inspectPage() {
       || /認証コードを入力|ワンタイムパスワード|画像に表示されている文字/.test(text)) return 'challenge';
   if (visible(document.querySelector('#user_id'))) return 'user';
   if (visible(document.querySelector('#password_current'))) return 'password';
+  // A dialog can cover a still-visible form. Do not mistake the underlying
+  // textarea for an actionable posting screen.
+  if ([...document.querySelectorAll('.dialog-container, .guidance-popup, [role="alert"], [role="dialog"]')].some(el => visible(el) && !el.querySelector('#collect-content'))) return 'modal';
   if (visible(document.querySelector('#collect-content'))) return 'form';
   if ([...document.querySelectorAll('.modal-dialog-container, [role="alert"]')].some(el => visible(el) && el.innerText.trim())) return 'modal';
   return null;
@@ -122,6 +125,20 @@ async function prepareCollect(page, content) {
       }, undefined, { timeout: 15000 });
     } catch { throw new RunError('COLLECT_BUTTON_NOT_READY', '表示中の送信ボタンが1個かつ有効な状態になりませんでした'); }
   });
+  let state = await readWhileNavigating(() => page.evaluate(inspectPage));
+  if (state === 'duplicate') return 'duplicate';
+  checkState(state);
+  try {
+    // Playwright's trial checks scrolling, stability and pointer interception
+    // without clicking. diagnose must test these same conditions as run.
+    await step('collect.actionable', () => page.locator('button.collect-btn:visible, input.collect-btn[type="submit"]:visible').click({ trial: true, timeout: 15000 }));
+  } catch (error) {
+    state = await readWhileNavigating(() => page.evaluate(inspectPage));
+    if (state === 'duplicate') return 'duplicate';
+    checkState(state);
+    throw error;
+  }
+  return 'form';
 }
 
 async function waitForSocial(page, kind, timeout = 30000) {
@@ -147,14 +164,36 @@ async function postItem(page, item, content, account) {
   const state = await openCollect(page, item.itemCode, account);
   if (state === 'duplicate') return 'skipped';
   const text = typeof content === 'function' ? await content() : content;
-  await prepareCollect(page, text);
+  if (await prepareCollect(page, text) === 'duplicate') return 'skipped';
+  // Product/duplicate dialogs may arrive after the item title or input appears.
+  const beforeSubmit = await readWhileNavigating(() => page.evaluate(inspectPage));
+  if (beforeSubmit === 'duplicate') return 'skipped';
+  checkState(beforeSubmit);
   // Observe the UI's own request. Never print its URL, payload or response body.
   const responsePromise = page.waitForResponse(response => {
     const url = new URL(response.url());
     return url.hostname === 'room.rakuten.co.jp' && url.pathname === '/api/collect' && response.request().method() === 'POST';
   }, { timeout: 30000 }).catch(() => null);
+  let requestSent = false;
+  const observeRequest = request => {
+    const url = new URL(request.url());
+    if (url.hostname === 'room.rakuten.co.jp' && url.pathname === '/api/collect' && request.method() === 'POST') requestSent = true;
+  };
+  page.on('request', observeRequest);
   // Only the visible, actual submit button; a styled wrapper is not a button.
-  await step('collect.submit', () => page.locator('button.collect-btn:visible, input.collect-btn[type="submit"]:visible').click({ timeout: 15000 }));
+  let clickError;
+  try { await step('collect.submit', () => page.locator('button.collect-btn:visible, input.collect-btn[type="submit"]:visible').click({ timeout: 15000 })); }
+  catch (error) { clickError = error; }
+  finally { page.off('request', observeRequest); }
+  // The click can time out while waiting for navigation AFTER sending. Check
+  // the existing request and saved result instead of either resending or
+  // prematurely reporting that nothing was posted.
+  if (clickError && !requestSent) {
+    const state = await readWhileNavigating(() => page.evaluate(inspectPage));
+    if (state === 'duplicate') return 'skipped';
+    checkState(state);
+    throw clickError;
+  }
   const response = await responsePromise;
   if (response) {
     const body = await response.json().catch(() => null);

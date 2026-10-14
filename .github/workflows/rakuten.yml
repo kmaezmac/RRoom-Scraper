@@ -23,6 +23,11 @@ on:
         required: true
         default: '30'
         type: string
+      max_posts:
+        description: 新規投稿数の上限（1〜30、コレ済みは数えない）
+        required: true
+        default: '30'
+        type: string
 
 permissions:
   contents: read
@@ -45,6 +50,7 @@ jobs:
       RUN_ACCOUNT: ${{ inputs.account || 'all' }}
       RUN_MODE: ${{ github.event_name == 'schedule' && 'run' || inputs.mode || 'diagnose' }}
       MAX_ITEMS: ${{ inputs.max_items || '30' }}
+      MAX_POSTS: ${{ inputs.max_posts || '30' }}
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
       RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
       RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}

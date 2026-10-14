@@ -30,10 +30,11 @@ async function processAccount(browser, config, account) {
     if (config.mode === 'diagnose') {
       result.stage = 'collect-preflight';
       if (initialState === 'form') {
-        await prepareCollect(page, await buildPostContent(items[0], { ...config, useOpenAI: false }));
-        result.collectReady = true;
+        result.collectReady = await prepareCollect(page, await buildPostContent(items[0], { ...config, useOpenAI: false })) !== 'duplicate';
       } else {
         result.collectReady = false;
+      }
+      if (!result.collectReady) {
         result.warnings.push('DIAGNOSE_DUPLICATE: コレ済み商品のため入力・送信ボタンは未検証です');
       }
       result.stage = 'social-check';
@@ -54,6 +55,7 @@ async function processAccount(browser, config, account) {
         const outcome = await postItem(page, item, () => buildPostContent(item, config), account);
         result[outcome]++;
         console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件`);
+        if (result.posted >= config.maxPosts) break;
         await sleep(5000);
       }
     }

@@ -37,6 +37,31 @@ test('headless posting is confirmed only by re-reading ROOM duplicate state', as
   assert.equal(await postItem(page, { itemCode: 'shop:item' }, '投稿内容', {}), 'skipped');
   assert.equal(submitted, 1);
 });
+test('a click timeout after sending still verifies the saved result without resending', async t => {
+  let submitted = 0;
+  const page = await fixture(t, url => {
+    if (url.pathname === '/api/collect') { submitted++; return 'ok'; }
+    return submitted ? duplicate : form;
+  });
+  const locator = page.locator.bind(page);
+  page.locator = (...args) => {
+    const target = locator(...args);
+    if (args[0] === 'button.collect-btn:visible, input.collect-btn[type="submit"]:visible') {
+      const click = target.click.bind(target);
+      target.click = async options => {
+        if (options?.trial) return click(options);
+        await click(options);
+        await page.waitForFunction(() => document.readyState === 'complete');
+        const error = new Error('private-url waiting for scheduled navigations to finish');
+        error.name = 'TimeoutError';
+        throw error;
+      };
+    }
+    return target;
+  };
+  assert.equal(await postItem(page, { itemCode: 'shop:item' }, '内容', {}), 'posted');
+  assert.equal(submitted, 1);
+});
 test('unknown modal and missing auth stop without a mutation', async t => {
   let writes = 0;
   const page = await fixture(t, (url, request) => {
@@ -46,6 +71,25 @@ test('unknown modal and missing auth stop without a mutation', async t => {
   });
   await assert.rejects(openCollect(page, 'shop:item', {}), error => error.code === 'AUTH_REQUIRED');
   assert.equal(writes, 0);
+});
+test('a duplicate dialog arriving after form input skips without a submit click', async t => {
+  let submitted = 0;
+  const page = await fixture(t, url => {
+    if (url.pathname === '/api/collect') { submitted++; return 'ok'; }
+    return form + `<script>document.querySelector('textarea').addEventListener('input', () => {
+      const dialog = document.createElement('div');
+      dialog.className = 'dialog-container';
+      dialog.style = 'position:fixed;inset:0;z-index:99999;background:white';
+      dialog.textContent = 'すでにコレ！している商品です';
+      document.body.append(dialog);
+    });</script>`;
+  });
+  assert.equal(await postItem(page, { itemCode: 'shop:item' }, '内容', {}), 'skipped');
+  assert.equal(submitted, 0);
+});
+test('an unknown dialog covering a visible form stops before input or submission', async t => {
+  const page = await fixture(t, () => form + '<div class="dialog-container">private-user private-message</div>');
+  await assert.rejects(openCollect(page, 'shop:item', {}), error => error.code === 'ROOM_MODAL' && !error.message.includes('private'));
 });
 test('collect waits for product data even when the input and button are already visible', async t => {
   const page = await fixture(t, () => form.replace('テスト商品', '') + '<script>setTimeout(()=>document.querySelector(".item-name").textContent="商品読込完了",1500)</script>');
@@ -112,6 +156,38 @@ test('diagnostic runner verifies login and persists encrypted session without so
   const result = await processAccount(wrappedBrowser, { mode: 'diagnose', stateDir, key: 'ab'.repeat(32), accessKey: 'test', maxItems: 30 }, { name: 'account1', appId: 'test' });
   assert.equal(result.ok, true); assert.equal(result.posted, 0); assert.equal(writes, 0); assert.equal(social, 2);
   assert.ok((await fs.readFile(path.join(stateDir, 'account1.enc'), 'utf8')).length > 0);
+});
+test('normal run skips a late duplicate, posts the next item, and respects the new-post limit', async t => {
+  const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rroom-run-test-'));
+  t.after(() => fs.rm(stateDir, { recursive: true, force: true }));
+  const axios = require('axios'); const get = axios.get;
+  axios.get = async () => ({ data: { Items: ['existing', 'new', 'unused'].map(id => ({ Item: { itemCode: `shop:${id}` } })) } });
+  t.after(() => { axios.get = get; });
+  let posts = 0, unusedReads = 0;
+  const wrappedBrowser = { newContext: async options => {
+    const context = await browser.newContext(options);
+    await context.route('**/*', async route => {
+      const url = new URL(route.request().url());
+      let body = form;
+      if (url.pathname === '/api/collect') { posts++; body = 'ok'; }
+      else if (url.pathname.includes('recommendUsers')) body = '<button aria-label="フォロー中">フォロー中</button>';
+      else if (url.pathname.includes('recommendItems')) body = '<a class="icon-like right isLiked">いいね済み</a>';
+      else if (url.searchParams.get('itemcode') === 'shop:existing') body = form + `<script>document.querySelector('textarea').oninput = () => {
+        const dialog = document.createElement('div'); dialog.className = 'dialog-container';
+        dialog.textContent = 'すでにコレ！している商品です'; document.body.append(dialog);
+      };</script>`;
+      else if (url.searchParams.get('itemcode') === 'shop:new' && posts) body = duplicate;
+      else if (url.searchParams.get('itemcode') === 'shop:unused') unusedReads++;
+      await route.fulfill({ contentType: 'text/html; charset=utf-8', body });
+    });
+    return context;
+  }};
+  const result = await processAccount(wrappedBrowser, { mode: 'run', stateDir, key: 'ab'.repeat(32), accessKey: 'test', maxItems: 3, maxPosts: 1 }, { name: 'account1', appId: 'test' });
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, 1);
+  assert.equal(result.posted, 1);
+  assert.equal(posts, 1);
+  assert.equal(unusedReads, 0);
 });
 test('an unconfirmed submission fails and is never clicked a second time', async t => {
   let submitted = 0;
