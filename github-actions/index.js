@@ -39,7 +39,7 @@ async function processAccount(browser, config, account) {
       result.stage = 'social-check';
       result.social = await diagnoseSocial(page);
       console.log(`${account.name}: フォロー候補 ${result.social.followCandidates}件 / いいね候補 ${result.social.likeCandidates}件（未操作）`);
-      console.log(`${account.name}: API・認証・投稿入力欄・送信ボタン・一覧を確認（投稿/フォロー/いいね未実行）`);
+      console.log(`${account.name}: ${result.collectReady ? 'API・認証・投稿入力欄・送信ボタン・一覧を確認' : 'API・認証・一覧を確認（コレ済みのため入力欄・送信ボタンは未検証）'}（投稿/フォロー/いいね未実行）`);
     } else {
       result.stage = 'follow';
       try { result.followAttempts = await performFollow(page); }

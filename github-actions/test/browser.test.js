@@ -22,7 +22,7 @@ async function fixture(t, render) {
 }
 test('classifies duplicate specifically, never treats every modal as collected', async t => {
   const page = await fixture(t, () => '');
-  for (const [html, expected] of [[duplicate, 'duplicate'], ['<div class="modal-dialog-container">エラーが発生しました</div>', 'modal'], ['<input autocomplete="one-time-code">', 'challenge'], [form, 'form']]) {
+  for (const [html, expected] of [[duplicate, 'duplicate'], ['<div class="modal-dialog-container">すでにコレ！している商品です</div>', 'duplicate'], ['<div class="modal-dialog-container">すでにコレ[[!]]している商品です</div>', 'duplicate'], ['<div class="modal-dialog-container">エラーが発生しました</div>', 'modal'], ['<input autocomplete="one-time-code">', 'challenge'], [form, 'form']]) {
     await page.setContent(html); assert.equal(await page.evaluate(inspectPage), expected);
   }
 });
@@ -30,7 +30,7 @@ test('headless posting is confirmed only by re-reading ROOM duplicate state', as
   let submitted = 0;
   const page = await fixture(t, url => {
     if (url.pathname === '/test-submit') { submitted++; return 'ok'; }
-    return submitted ? duplicate : form;
+    return submitted ? '<div class="modal-dialog-container">すでにコレ！している商品です</div>' : form;
   });
   assert.equal(await postItem(page, { itemCode: 'shop:item' }, '投稿内容', {}), 'posted');
   assert.equal(submitted, 1);

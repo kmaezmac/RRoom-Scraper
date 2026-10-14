@@ -8,7 +8,7 @@ const mixUrl = code => `${ROOM}/mix?${new URLSearchParams({ itemcode: code, scid
 function inspectPage() {
   const visible = el => el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length) && getComputedStyle(el).visibility !== 'hidden';
   const text = document.body?.innerText || '';
-  if (/すでにコレ(?:している|してい|！?済み|！?されています)/.test(text)) return 'duplicate';
+  if (/すでにコレ[\s!！\[\]]*(?:している|してい|済み|されています)/.test(text)) return 'duplicate';
   if (/アクセスが制限|Access Denied|アクセスを拒否/.test(text)) return 'blocked';
   if ([...document.querySelectorAll('iframe[src*="recaptcha"], iframe[src*="hcaptcha"], input[autocomplete="one-time-code"], input[name*="otp"]')].some(visible)
       || /認証コードを入力|ワンタイムパスワード|画像に表示されている文字/.test(text)) return 'challenge';
@@ -142,7 +142,7 @@ async function postItem(page, item, content, account) {
     // Keep the submitting page alive so navigation cannot abort its request.
     verification = await page.context().newPage();
     await navigate(verification, mixUrl(item.itemCode));
-    await verification.waitForFunction(() => /すでにコレ(?:している|してい|！?済み|！?されています)/.test(document.body?.innerText || ''), undefined, { timeout: 15000 });
+    await verification.waitForFunction(() => /すでにコレ[\s!！\[\]]*(?:している|してい|済み|されています)/.test(document.body?.innerText || ''), undefined, { timeout: 15000 });
     return 'posted';
   } catch {
     throw new RunError('POST_UNCONFIRMED', '投稿結果を確認できません。重複送信を避けるため、このアカウントを停止します。ROOMで直近の投稿を確認してください');
