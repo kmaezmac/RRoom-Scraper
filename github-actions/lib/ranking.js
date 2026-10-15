@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { RunError } = require('./config');
+const { tagsFor } = require('./genres');
 const ENDPOINT = 'https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // ROOM's browser validator counts UTF-16 units (String.length), not code points.
@@ -13,12 +14,16 @@ function limitPostContent(text, limit = 500) {
   return output;
 }
 
-async function fetchRanking(account, config, { get = axios.get, random = Math.random, wait = sleep } = {}) {
+async function fetchRanking(account, config, { get = axios.get, random = Math.random, wait = sleep, genreId, page, fullPage = false, allowEmpty = false, beforeRequest = () => wait(1100) } = {}) {
   // Windows版と同じランキング条件。
   const params = { applicationId: account.appId, age: [20, 30, 40][Math.floor(random() * 3)], sex: 1, carrier: 0, page: Math.floor(random() * 34) + 1 };
+  const selectedGenre = genreId || account.genres?.[Math.floor(random() * account.genres.length)];
+  if (selectedGenre) { params.genreId = selectedGenre; delete params.age; delete params.sex; params.page = page || 1; }
+  else if (page) params.page = page;
   for (let attempt = 0; attempt < 3; attempt++) {
     let response;
     try {
+      await beforeRequest();
       response = await get(ENDPOINT, { params, headers: { accessKey: config.accessKey }, timeout: 30000 });
     } catch (error) {
       const status = error.response?.status;
@@ -26,18 +31,19 @@ async function fetchRanking(account, config, { get = axios.get, random = Math.ra
       throw new RunError('RANKING_API', `楽天API取得失敗（HTTP ${Number(status) || '応答なし'}）。APIキー・許可IP/URL・利用上限を確認してください`);
     }
     if (!Array.isArray(response.data?.Items) || response.data.Items.length === 0) {
+      if (allowEmpty && Array.isArray(response.data?.Items)) return [];
       throw new RunError('RANKING_EMPTY', '楽天APIからランキング商品を取得できませんでした');
     }
     const items = response.data.Items.map(entry => entry.Item);
-    if (items.some(item => !item || typeof item.itemCode !== 'string' || !item.itemCode.includes(':'))) {
+    if (items.some(item => !item || typeof item.itemCode !== 'string' || !item.itemCode.includes(':') || item.itemCode.length > 256)) {
       throw new RunError('RANKING_FORMAT', '楽天APIの商品形式が想定と異なります');
     }
-    return items.slice(0, config.maxItems);
+    return items.slice(0, fullPage ? 30 : config.maxItems).map(item => selectedGenre ? { ...item, requestedGenreId: selectedGenre } : item);
   }
 }
 async function buildPostContent(item, config) {
   const { itemName = '', catchcopy = '', itemCaption = '' } = item;
-  const tags = ' #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場';
+  const tags = tagsFor(item);
   const body = itemName + catchcopy + limitPostContent(itemCaption, 200);
   const fallback = limitPostContent(body, 500 - tags.length) + tags;
   if (!config.useOpenAI) return fallback;
