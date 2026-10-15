@@ -8,6 +8,22 @@ on:
 permissions:
   contents: read
 jobs:
+  # Exercise the same queue policy without credentials or ROOM operations.
+  # All three jobs must finish; the default single-pending policy can cancel one.
+  queue-check:
+    strategy:
+      fail-fast: false
+      matrix:
+        request: [1, 2, 3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    concurrency:
+      group: room-queue-test-${{ github.run_id }}
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: 複数の待機要求を破棄せず順次実行
+        run: sleep 15
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
