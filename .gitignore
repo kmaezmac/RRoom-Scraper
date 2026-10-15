@@ -142,3 +142,6 @@ collected_history.json
 **/playwright-report/
 **/test-results/
 *.enc
+
+# Local copy of README and docs
+/local-documentation.txt
