@@ -27,6 +27,7 @@ async function fetchRanking(account, config, { get = axios.get, random = Math.ra
       response = await get(ENDPOINT, { params, headers: { accessKey: config.accessKey }, timeout: 30000 });
     } catch (error) {
       const status = error.response?.status;
+      if (allowEmpty && status === 404 && error.response?.data?.error === 'not_found') return [];
       if ((!status || status === 429 || status >= 500) && attempt < 2) { await wait(2000 * (attempt + 1)); continue; }
       throw new RunError('RANKING_API', `楽天API取得失敗（HTTP ${Number(status) || '応答なし'}）。APIキー・許可IP/URL・利用上限を確認してください`);
     }

@@ -127,3 +127,12 @@ test('a pre-submit failure preserves the current candidate without refreshing it
   await resumed.init();assert.equal((await resumed.next()).itemCode,'shop:retry');resumed.acknowledge();resumed.restoreCurrent();await resumed.save();
   assert.equal(history.saved.pool[0].item.itemCode,'shop:next');
 });
+test('documented ranking not_found advances the cursor; auth and unexpected 404 remain fatal', async () => {
+  const account={appId:'app',genres:['100804']};
+  const fetchPage=data=>fetchRanking(account,{maxItems:30},{allowEmpty:true,wait:async()=>{},get:async()=>{throw {response:{status:404,data}};}});
+  assert.deepEqual(await fetchPage({error:'not_found'}),[]);
+  await assert.rejects(fetchPage({error:'other'}),/HTTP 404/);
+  const history=memoryHistory();history.saved={version:1,signature:'["100804"]',turn:0,pages:{100804:2},pool:[]};
+  const candidates=new Candidates(account,{rankingPages:1},history,{ranking:()=>fetchPage({error:'not_found'})});
+  await candidates.init();assert.equal(await candidates.next(),null);assert.equal(history.saved.pages['100804'],1);
+});
