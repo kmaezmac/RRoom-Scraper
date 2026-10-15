@@ -1,11 +1,15 @@
 name: 楽天ROOM自動投稿
+run-name: 楽天ROOM / ${{ inputs.source == 'cron-job.org' && 'cron-job.org' || 'manual' }}
 
 on:
-  schedule:
-    # JST 07:00,09:00,11:00,13:00,15:00,17:00,19:00,21:00,23:00
-    - cron: '0 0,2,4,6,8,10,12,14,22 * * *'
   workflow_dispatch:
     inputs:
+      source:
+        description: 起動元（cron-job.orgはAPIリクエストで指定）
+        required: true
+        default: manual
+        type: choice
+        options: [manual, cron-job.org]
       account:
         description: 実行するアカウント
         required: true
@@ -32,15 +36,15 @@ on:
 permissions:
   contents: read
 
-# Serialize all accounts, manual runs, and scheduled runs against the same cache.
+# cron-job.org owns the schedule. Retain pending dispatches rather than replacing
+# the previous pending run when another request arrives (up to 100 pending runs).
 concurrency:
   group: rakuten-room
   cancel-in-progress: false
+  queue: max
 
 jobs:
   post:
-    # Enable only after a successful diagnostic and initial posting check.
-    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_SCHEDULE == 'true'
     runs-on: ubuntu-24.04
     # Up to 90 candidates, including reopening each new post to verify it.
     timeout-minutes: 180
@@ -49,7 +53,7 @@ jobs:
         working-directory: github-actions
     env:
       RUN_ACCOUNT: ${{ inputs.account || 'all' }}
-      RUN_MODE: ${{ github.event_name == 'schedule' && 'run' || inputs.mode || 'diagnose' }}
+      RUN_MODE: ${{ inputs.mode || 'diagnose' }}
       MAX_ITEMS: ${{ inputs.max_items || '30' }}
       MAX_POSTS: ${{ inputs.max_posts || '30' }}
       RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
