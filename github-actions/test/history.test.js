@@ -118,3 +118,12 @@ test('pending entries are excluded exactly like confirmed history on the next ru
   const candidates=new Candidates({genres:[]},{rankingPages:1},history,{ranking:async()=>[item('uncertain'),item('fresh')]});
   await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:fresh');assert.equal(candidates.historySkipped,1);
 });
+test('a pre-submit failure preserves the current candidate without refreshing its TTL', async () => {
+  const history=memoryHistory();
+  const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>100,ranking:async()=>[item('retry'),item('next')]});
+  await candidates.init();await candidates.next();candidates.restoreCurrent();await candidates.save();
+  assert.equal(history.saved.pool[0].item.itemCode,'shop:retry');assert.equal(history.saved.pool[0].fetchedAt,100);
+  const resumed=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:()=>{throw new Error('extra API call');}});
+  await resumed.init();assert.equal((await resumed.next()).itemCode,'shop:retry');resumed.acknowledge();resumed.restoreCurrent();await resumed.save();
+  assert.equal(history.saved.pool[0].item.itemCode,'shop:next');
+});

@@ -76,6 +76,7 @@ async function processAccount(browser, config, account, { history = config.histo
           { beforeSubmit: () => history ? history.claim(item) : true });
         result[outcome]++;
         if (history && outcome !== 'deferred') await history.finish(item, outcome === 'posted' ? 'posted' : 'duplicate');
+        candidates?.acknowledge();
         attempts++;
         console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件 / 履歴競合 ${result.deferred}件`);
         if (result.posted >= config.maxPosts || attempts >= config.maxItems) break;
@@ -96,6 +97,7 @@ async function processAccount(browser, config, account, { history = config.histo
     console.error(`${account.name}: UI ${JSON.stringify(result.ui)}`);
   } finally {
     if (candidates?.state) {
+      if (result.error) candidates.restoreCurrent();
       result.historySkipped = candidates.historySkipped;
       result.rankingPages = candidates.pages;
       try { await candidates.save(); }

@@ -11,7 +11,7 @@ class Candidates {
   async init() {
     const signature = JSON.stringify(this.account.genres || []);
     const previous = await this.history.state();
-    if (previous && (previous.version !== 1 || !Array.isArray(previous.pool) || !previous.pages || !Number.isInteger(previous.turn))) {
+    if (previous && (previous.version !== 1 || !Array.isArray(previous.pool) || !previous.pages || typeof previous.pages !== 'object' || Array.isArray(previous.pages) || !Number.isSafeInteger(previous.turn) || previous.turn < 0 || previous.pool.some(entry => !entry?.item || typeof entry.item.itemCode !== 'string' || !entry.item.itemCode.includes(':')))) {
       throw new RunError('HISTORY_FORMAT', '候補状態の形式が不正です。候補状態テーブルを確認してください');
     }
     this.state = previous?.signature === signature ? previous : { version: 1, signature, turn: 0, pages: {}, pool: [] };
@@ -25,13 +25,20 @@ class Candidates {
       return true;
     });
   }
+  acknowledge() { this.current = null; }
+  restoreCurrent() {
+    if (this.current) this.state.pool.unshift(this.current);
+    this.current = null;
+  }
   async save() { await this.history.saveState(this.state); }
   async next() {
     while (true) {
       while (this.state.pool.length) {
-        const { item } = this.state.pool.shift();
+        const entry = this.state.pool.shift();
+        const { item } = entry;
         if (this.seen.has(item.itemCode)) continue;
         this.seen.add(item.itemCode);
+        this.current = entry;
         return item;
       }
       if (this.pages >= this.config.rankingPages) return null;
