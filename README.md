@@ -71,6 +71,8 @@ Windows側のタスクスケジューラを停止し、[cron-job.orgの設定手
 
 **マージだけでは定期実行は始まりません。** GitHubの `schedule` は削除済みで、`ENABLE_SCHEDULE` も不要です。時刻・回数の変更と停止はcron-job.orgで行います。既存の楽天関連Secretsは変更不要です。
 
+`USE_OPENAI=true` もVariablesに設定できます。未設定なら定型文です。OpenAI APIの利用料金はActionsの無料枠とは別です。
+
 ## 自動ログインで止まる場合
 
 楽天側がCAPTCHA・SMS等の追加認証やクラウドIP制限を要求する場合、パスワードだけの完全無人ログインはできません。認証を回避する処理はありません。既存のWindowsでログイン済みの状態を一度持ち込む方法を用意しています。
