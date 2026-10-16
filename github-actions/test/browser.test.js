@@ -351,3 +351,52 @@ test('social budget and ROOM limit messages stop before any click', async t => {
   result=await runSocial(page,'like',{navigate:async()=>page.setContent('<div role="alert">ご利用上限数に達しています</div>'),reserve:async()=>true,block:async limited=>blocks.push(limited),wait:async()=>{}});
   assert.equal(result.attempted,0);assert.equal(result.stop,'limited');assert.deepEqual(blocks,[true]);
 });
+// Exercise the actual posting loop: a failed item must not suppress the next one.
+for (const failure of ['R145', 'R122', 'HTTP503', 'unconfirmed', 'history-write', 'history-claim', 'max-items']) {
+  test(`posting continues after ${failure} without resending the failed item`, async t => {
+    const stateDir=await fs.mkdtemp(path.join(os.tmpdir(),'rroom-skip-'));
+    t.after(()=>fs.rm(stateDir,{recursive:true,force:true}));
+    const records=new Map(), sends=new Map();let saved=null;
+    const history={account:'account1',api:async()=>[],state:async()=>saved,
+      saveState:async s=>{saved=structuredClone(s);},known:async()=>new Set(),
+      claim:async item=>{
+        if(item.itemCode==='shop:first' && failure==='history-claim') throw new Error('private URL secret');
+        records.set(item.itemCode,'pending');return true;
+      },
+      finish:async(item,status)=>{
+        if(item.itemCode==='shop:first' && failure==='history-write') throw new Error('private URL secret');
+        records.set(item.itemCode,status);
+      },
+    };
+    const wrappedBrowser={newContext:async options=>{
+      const context=await browser.newContext(options);
+      await context.route('**/*',async route=>{
+        const url=new URL(route.request().url());let body=form;
+        const code=url.searchParams.get('itemcode');
+        if(url.pathname==='/api/collect') {
+          const code=new URL(route.request().frame().url()).searchParams.get('itemcode');
+          sends.set(code,(sends.get(code)||0)+1);
+          if(code==='shop:first' && ['R145','R122','max-items'].includes(failure)) {
+            return route.fulfill({contentType:'application/json',body:JSON.stringify({status:'error',msg_code:failure==='max-items'?'R145':failure})});
+          }
+          if(code==='shop:first' && failure==='HTTP503')return route.fulfill({status:503,body:'private URL secret'});
+          body='ok';
+        } else if(url.pathname.includes('recommendUsers') || url.pathname.includes('recommendItems')) body='<p>empty</p>';
+        else if(sends.has(code) && !(code==='shop:first' && ['R145','R122','HTTP503','unconfirmed','max-items'].includes(failure))) body=duplicate;
+        await route.fulfill({contentType:'text/html; charset=utf-8',body});
+      });return context;
+    }};
+    const result=await processAccount(wrappedBrowser,{mode:'run',stateDir,key:'ab'.repeat(32),maxItems:failure==='max-items'?1:3,maxPosts:2,rankingPages:1},{name:'account1',genres:[]},{history,ranking:async()=>['first','second'].map(id=>({itemCode:`shop:${id}`})),wait:async()=>{}});
+    assert.equal(result.itemErrors,1);assert.equal(sends.get('shop:first')||0,failure==='history-claim'?0:1);
+    assert.ok(!result.warnings.join(' ').includes('private'));
+    if(failure==='max-items') {
+      assert.equal(sends.has('shop:second'),false);assert.match(result.error,/POST_ITEMS_FAILED/);
+      assert.equal(saved.pool[0].item.itemCode,'shop:second');
+    } else {
+      assert.equal(sends.get('shop:second'),1);assert.equal(records.get('shop:second'),'posted');
+      assert.equal(result.posted,failure==='history-write'?2:1);assert.equal(result.error,undefined);
+      assert.equal(saved.pool.length,0);
+    }
+    if(failure!=='history-claim')assert.equal(records.get('shop:first'),'pending');
+  });
+}

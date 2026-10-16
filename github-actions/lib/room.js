@@ -224,7 +224,7 @@ async function postItem(page, item, content, account, { beforeSubmit = async () 
     await verification.waitForFunction(() => /すでにコレ[\s!！\[\]]*(?:している|してい|済み|されています)/.test(document.body?.innerText || ''), undefined, { timeout: 15000 });
     return 'posted';
   } catch {
-    const error = new RunError('POST_UNCONFIRMED', '投稿結果を確認できません。重複送信を避けるため、このアカウントを停止します。ROOMで直近の投稿を確認してください');
+    const error = new RunError('POST_UNCONFIRMED', '投稿結果を確認できません。重複送信を避けるため、この商品は再送しません。ROOMで直近の投稿を確認してください');
     error.operation = 'collect.verify';
     throw error;
   } finally {

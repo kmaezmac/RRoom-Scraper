@@ -18,8 +18,8 @@ function assessRun(mode, results) {
 }
 
 function renderSummary(summary) {
-  const rows = summary.results.map(r => `| ${r.account} | ${labels[r.status]} | ${r.stage} | ${r.posted} | ${r.skipped} | ${r.historySkipped || 0} | ${r.rankingPages || 0} | ${r.deferred || 0} | ${r.followAttempts} / ${r.followConfirmed ?? "—"} (${r.followStop || "legacy"}) | ${r.likeAttempts} / ${r.likeConfirmed ?? "—"} (${r.likeStop || "legacy"}) | ${[r.operation, r.error, ...r.warnings].filter(Boolean).join(' / ')} |`);
-  return `\nモード: ${summary.mode} / 所要時間: ${summary.elapsedSeconds}秒\n\n全体: ${labels[summary.status]}（ジョブ${summary.exitCode ? '失敗' : '成功'}） / 投稿確認合計: ${summary.posted}件\n\n| Account | 結果 | 段階 | 投稿確認 | コレ済み | 履歴除外 | API取得ページ | 履歴競合 | フォロー 操作/確認(終了理由) | いいね 操作/確認(終了理由) | エラー・警告 |\n|---|---|---|---|---|---|---|---|---|---|---|\n${rows.join('\n')}\n`;
+  const rows = summary.results.map(r => `| ${r.account} | ${labels[r.status]} | ${r.stage} | ${r.posted} | ${r.skipped} | ${r.itemErrors || 0} | ${r.historySkipped || 0} | ${r.rankingPages || 0} | ${r.deferred || 0} | ${r.followAttempts} / ${r.followConfirmed ?? "—"} (${r.followStop || "legacy"}) | ${r.likeAttempts} / ${r.likeConfirmed ?? "—"} (${r.likeStop || "legacy"}) | ${[r.operation, r.error, ...r.warnings].filter(Boolean).join(' / ')} |`);
+  return `\nモード: ${summary.mode} / 所要時間: ${summary.elapsedSeconds}秒\n\n全体: ${labels[summary.status]}（ジョブ${summary.exitCode ? '失敗' : '成功'}） / 投稿確認合計: ${summary.posted}件\n\n| Account | 結果 | 段階 | 投稿確認 | コレ済み | 商品エラー除外 | 履歴除外 | API取得ページ | 履歴競合 | フォロー 操作/確認(終了理由) | いいね 操作/確認(終了理由) | エラー・警告 |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n${rows.join('\n')}\n`;
 }
 
 module.exports = { assessRun, renderSummary };
