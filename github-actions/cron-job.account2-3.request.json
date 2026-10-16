@@ -1,0 +1,10 @@
+{
+  "ref": "master",
+  "inputs": {
+    "source": "cron-job.org",
+    "account": "account2_3",
+    "mode": "run",
+    "max_items": "30",
+    "max_posts": "30"
+  }
+}

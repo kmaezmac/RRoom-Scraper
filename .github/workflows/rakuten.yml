@@ -11,11 +11,11 @@ on:
         type: choice
         options: [manual, cron-job.org]
       account:
-        description: 実行するアカウント
+        description: 実行するアカウント（account2_3はaccount2→account3）
         required: true
         default: all
         type: choice
-        options: [all, account1, account2, account3]
+        options: [all, account1, account2, account3, account1_2, account1_3, account2_3]
       mode:
         description: diagnoseはAPI・ログイン・投稿画面の確認のみ
         required: true
