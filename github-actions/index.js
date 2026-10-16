@@ -2,7 +2,7 @@ const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const fs = require('node:fs/promises');
 const { chromium } = require('playwright');
-const { readConfig, safeError } = require('./lib/config');
+const { readConfig, safeError, RunError } = require('./lib/config');
 const { loadState, saveState } = require('./lib/state');
 const { fetchRanking, buildPostContent, sleep } = require('./lib/ranking');
 const { openCollect, prepareCollect, diagnoseSocial, postItem, performFollow, performLike } = require('./lib/room');
@@ -16,7 +16,7 @@ const { navigate: navigateSocial } = require('./lib/room');
 const { Candidates } = require('./lib/candidates');
 
 async function processAccount(browser, config, account, { history = config.historyEnabled ? new HistoryStore(config, account) : null, ranking = fetchRanking, wait = sleep } = {}) {
-  const result = { account: account.name, mode: config.mode, stage: 'session', posted: 0, skipped: 0, historySkipped: 0, deferred: 0, rankingPages: 0, followAttempts: 0, likeAttempts: 0, warnings: [], ok: false };
+  const result = { account: account.name, mode: config.mode, stage: 'session', posted: 0, skipped: 0, itemErrors: 0, historySkipped: 0, deferred: 0, rankingPages: 0, followAttempts: 0, likeAttempts: 0, warnings: [], ok: false };
   let context;
   let page;
   let authenticated = false;
@@ -100,13 +100,22 @@ async function processAccount(browser, config, account, { history = config.histo
       let attempts = 0;
       let item = firstItem;
       while (item && attempts < config.maxItems) {
-        const outcome = await postItem(page, item, () => buildPostContent(item, config), account,
-          { beforeSubmit: () => history ? history.claim(item) : true });
-        result[outcome]++;
-        if (history && outcome !== 'deferred') await history.finish(item, outcome === 'posted' ? 'posted' : 'duplicate');
+        try {
+          const outcome = await postItem(page, item, () => buildPostContent(item, config), account,
+            { beforeSubmit: () => history ? history.claim(item) : true });
+          // Preserve a confirmed post count even if saving its history fails.
+          result[outcome]++;
+          if (history && outcome !== 'deferred') await history.finish(item, outcome === 'posted' ? 'posted' : 'duplicate');
+        } catch (error) {
+          result.itemErrors++;
+          result.warnings.push(`ITEM_SKIPPED: ${operationOf(error)} / ${safeError(error)}`);
+          console.warn(`${account.name}: 商品処理エラーのため次の候補へ / ${operationOf(error)} / ${safeError(error)}`);
+          // Never retry this item in the current run. An existing pending
+          // reservation stays pending, including an uncertain submission.
+        }
         candidates?.acknowledge();
         attempts++;
-        console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件 / 履歴競合 ${result.deferred}件`);
+        console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件 / 履歴競合 ${result.deferred}件 / 商品エラー ${result.itemErrors}件`);
         if (result.posted >= config.maxPosts || attempts >= config.maxItems) break;
         await wait(5000);
         item = candidates ? await candidates.next() : items[attempts];
@@ -114,6 +123,9 @@ async function processAccount(browser, config, account, { history = config.histo
       if (candidates && result.posted < config.maxPosts) {
         result.warnings.push('CANDIDATES_LIMIT: 候補または操作上限に達しました。投稿済み候補を再送せず次回へ進みます');
       }
+    }
+    if (result.itemErrors > 0 && result.posted === 0 && result.skipped === 0) {
+      throw new RunError('POST_ITEMS_FAILED', '商品処理エラー後も続行しましたが、投稿確認・コレ済み確認はいずれも0件でした');
     }
     result.stage = result.warnings.length ? 'partial' : 'complete';
     result.ok = result.warnings.length === 0;
