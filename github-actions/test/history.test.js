@@ -97,8 +97,8 @@ test('atomic claims do not overwrite an existing pending or posted record', asyn
 });
 test('genre tags derive from selection and unknown genres use neutral fallback within 500 units', async () => {
   const text=await buildPostContent({...item('a'),requestedGenreId:'100804',itemCaption:'説明'.repeat(500)},{useOpenAI:false});
-  assert.ok(text.includes('#インテリア'));assert.ok(!text.includes('#ランキング'));assert.ok(text.length<=500);
-  assert.ok((await buildPostContent({...item('b'),genreId:'99999'},{useOpenAI:false})).endsWith('#楽天市場 #商品紹介'));
+  assert.ok(text.includes('#インテリア'));assert.ok(text.includes('#ランキング'));assert.ok(text.length<=500);
+  assert.ok((await buildPostContent({...item('b'),genreId:'99999'},{useOpenAI:false})).endsWith('#商品紹介 #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場 #お買い物メモ #おすすめ商品'));
 });
 test('short pages still advance because removed ranking entries may leave gaps', async () => {
   const history=memoryHistory(); const calls=[];
@@ -142,6 +142,10 @@ test('all supported catalog genres have tags and medicine rankings are rejected'
   for (const id of Object.keys(genreTags)) {
     assert.deepEqual(parseGenres(id), [id]);
     assert.ok(!tagsFor({requestedGenreId:id}).includes('#商品紹介'));
+    const text = tagsFor({requestedGenreId:id});
+    for (const tag of ['あったら便利','欲しいものリスト','ランキング','人気','楽天市場','お買い物メモ','おすすめ商品']) {
+      assert.equal(text.split(' ').filter(word => word === `#${tag}`).length, 1);
+    }
   }
   for (const id of ['551169','201541']) assert.throws(()=>parseGenres(id), /対象外/);
   for (const row of [
@@ -172,4 +176,27 @@ test('cached excluded items are removed before browser selection and eligible le
   ]};
   const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:()=>{throw new Error('extra API call');}});
   await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:good');assert.equal(candidates.pages,0);
+});
+test('sold-out ranking rows are skipped before selection without extra API calls or history records', async () => {
+  const { isRoomEligible } = require('../lib/genres');
+  for (const availability of [0,'0']) assert.equal(isRoomEligible({...item('sold'),availability}),false);
+  for (const availability of [1,'1',undefined,null]) assert.equal(isRoomEligible({...item('available'),availability}),true);
+  const history=memoryHistory(); let calls=0;
+  const candidates=new Candidates({genres:[]},{rankingPages:1},history,{ranking:async()=>{
+    calls++;return [{...item('sold'),availability:0},{...item('available'),availability:1}];
+  }});
+  await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:available');
+  assert.equal(calls,1);assert.equal(history.codes.size,0);
+  assert.equal(history.saved.pool.length,1);assert.equal(history.saved.pool[0].item.availability,1);
+});
+test('all-sold-out pages advance and saved sold-out candidates are removed', async () => {
+  const history=memoryHistory(); const calls=[];
+  history.saved={version:1,signature:'[]',turn:0,pages:{},pool:[{item:{...item('cached'),availability:0},fetchedAt:100}]};
+  for(let n=0;n<2;n++) {
+    const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:async(_,__,o)=>{
+      calls.push(o.page);return [{...item('sold'),availability:'0'}];
+    }});
+    await candidates.init();assert.equal(await candidates.next(),null);
+  }
+  assert.deepEqual(calls,[1,2]);assert.equal(history.saved.pool.length,0);
 });

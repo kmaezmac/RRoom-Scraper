@@ -42,6 +42,9 @@ const excludedGenres = new Set(['551169', '201541']);
 // ROOM help: https://room.rakuten.co.jp/info/help/collect/08.html
 // Only information already returned by ranking is used; no per-item API calls.
 function isRoomEligible(item) {
+  // Ranking returns availability; it has no availability input filter.
+  // Missing flags in older cached candidates mean unknown, not sold out.
+  if (item.availability === 0 || item.availability === '0') return false;
   if (excludedGenres.has(String(item.genreId)) || excludedGenres.has(String(item.requestedGenreId))) return false;
   const shop = String(item.itemCode || '').split(':')[0];
   if (shop === 'rakutenkobo-ebooks') return false;
@@ -64,10 +67,11 @@ function parseGenres(value = '') {
   }
   return [...new Set(ids)];
 }
+// Shared discovery labels; not claims of purchase, use, discounts or original photos.
+const commonTags = ['あったら便利', '欲しいものリスト', 'ランキング', '人気', '楽天市場', 'お買い物メモ', 'おすすめ商品'];
 function tagsFor(item) {
   const id = String(item.requestedGenreId || item.genreId || '');
-  const tags = genreTags[id];
-  // Broad genre labels only; no claims about use, age, ingredients or benefits.
-  return tags ? ` ${tags.map(tag => `#${tag}`).join(' ')} #楽天市場` : ' #楽天市場 #商品紹介';
+  const tags = [...new Set([...(genreTags[id] || ['商品紹介']), ...commonTags])];
+  return ` ${tags.map(tag => `#${tag}`).join(' ')}`;
 }
 module.exports = { parseGenres, tagsFor, genreTags, isRoomEligible };
