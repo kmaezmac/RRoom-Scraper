@@ -200,3 +200,16 @@ test('all-sold-out pages advance and saved sold-out candidates are removed', asy
   }
   assert.deepEqual(calls,[1,2]);assert.equal(history.saved.pool.length,0);
 });
+test('social reservations survive restarts and enforce rolling hourly/daily budgets', async () => {
+  const { SocialBudget } = require('../lib/social-budget');
+  let saved, now=100000000;
+  const history={account:'account1',api:async(_,options)=>{if(options.method==='POST'){saved=structuredClone(options.body.state);return null;}return saved?[{state:structuredClone(saved)}]:[];}};
+  const budget=new SocialBudget(history,()=>now);await budget.init();
+  for(let i=0;i<50;i++)assert.equal(await budget.reserve('follow'),true);
+  assert.equal(await budget.reserve('follow'),false);assert.equal(await budget.reserve('like'),true);
+  const next=new SocialBudget(history,()=>now);await next.init();assert.equal(await next.reserve('follow'),false);
+  now+=3600001;assert.equal(await next.reserve('follow'),true);
+  next.state.follow=Array.from({length:450},()=>now-7200000);assert.equal(await next.reserve('follow'),false);
+  await next.block('like',true);now+=3600001;assert.equal(await next.reserve('like'),false);
+  now+=86400001;assert.equal(await next.reserve('like'),true);
+});
