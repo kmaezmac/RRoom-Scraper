@@ -80,7 +80,7 @@ async function processAccount(browser, config, account, { history = config.histo
         try {
           if (budget?.state) {
             const social = await runSocial(page, kind, {
-              navigate: navigateSocial, reserve: () => budget.reserve(kind), block: limited => budget.block(kind, limited),
+              navigate: navigateSocial, wait, reserve: () => budget.reserve(kind), block: limited => budget.block(kind, limited),
             });
             result[`${kind}Attempts`] = social.attempted;
             result[`${kind}Confirmed`] = social.confirmed;

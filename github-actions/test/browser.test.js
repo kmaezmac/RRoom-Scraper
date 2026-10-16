@@ -284,6 +284,7 @@ test('history runner filters known products before opening a page and saves conf
   let posts=0,knownReads=0,claims=0,saved=null;
   const records=new Map([['shop:old','posted']]);
   const history={
+    account:'account1', api:async()=>[],
     state:async()=>saved,saveState:async s=>{saved=structuredClone(s);},
     known:async items=>new Set(items.filter(i=>records.has(i.itemCode)).map(i=>i.itemCode)),
     claim:async i=>{claims++;records.set(i.itemCode,'pending');return true;},
