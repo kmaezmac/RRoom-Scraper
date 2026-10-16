@@ -265,3 +265,50 @@ test('UI diagnostics distinguish an enabled button from an obstructed click with
   assert.equal(data.submitReceivesPointer, true);
   assert.equal(data.pointerBlocker, 'none');
 });
+
+test('history claim failure or collision prevents the actual submit request', async t => {
+  let submitted=0;
+  const page=await fixture(t,url=>{if(url.pathname==='/api/collect')submitted++;return form;});
+  const {RunError}=require('../lib/config');
+  await assert.rejects(postItem(page,{itemCode:'shop:new'},'内容',{}, {beforeSubmit:async()=>{throw new RunError('HISTORY_DB','履歴DBエラー');}}),e=>e.code==='HISTORY_DB');
+  assert.equal(await postItem(page,{itemCode:'shop:new'},'内容',{}, {beforeSubmit:async()=>false}),'deferred');
+  assert.equal(submitted,0);
+});
+test('duplicate detection avoids both text generation and claiming a new submission', async t => {
+  const page=await fixture(t,()=>duplicate);
+  assert.equal(await postItem(page,{itemCode:'shop:old'},()=>{throw new Error('must not generate');},{},{beforeSubmit:()=>{throw new Error('must not claim');}}),'skipped');
+});
+test('history runner filters known products before opening a page and saves confirmed outcomes', async t => {
+  const stateDir=await fs.mkdtemp(path.join(os.tmpdir(),'rroom-history-'));
+  t.after(()=>fs.rm(stateDir,{recursive:true,force:true}));
+  let posts=0,knownReads=0,claims=0,saved=null;
+  const records=new Map([['shop:old','posted']]);
+  const history={
+    state:async()=>saved,saveState:async s=>{saved=structuredClone(s);},
+    known:async items=>new Set(items.filter(i=>records.has(i.itemCode)).map(i=>i.itemCode)),
+    claim:async i=>{claims++;records.set(i.itemCode,'pending');return true;},
+    finish:async(i,status)=>{records.set(i.itemCode,status);},
+  };
+  const wrappedBrowser={newContext:async options=>{
+    const context=await browser.newContext(options);
+    await context.route('**/*',async route=>{
+      const url=new URL(route.request().url());let body=form;
+      if(url.pathname==='/api/collect'){assert.equal(records.get('shop:new'),'pending');posts++;body='ok';}
+      else if(url.pathname.includes('recommendUsers'))body='<button aria-label="フォロー中">フォロー中</button>';
+      else if(url.pathname.includes('recommendItems'))body='<a class="icon-like right isLiked">いいね済み</a>';
+      else if(url.searchParams.get('itemcode')==='shop:old')knownReads++;
+      else if(posts)body=duplicate;
+      await route.fulfill({contentType:'text/html; charset=utf-8',body});
+    });return context;
+  }};
+  const result=await processAccount(wrappedBrowser,{mode:'run',stateDir,key:'ab'.repeat(32),maxItems:30,maxPosts:1,rankingPages:1},{name:'account1',genres:['100804']},{history,ranking:async()=>['old','new','unused'].map(id=>({itemCode:`shop:${id}`})),wait:async()=>{}});
+  assert.equal(result.ok,true);assert.equal(result.posted,1);assert.equal(result.historySkipped,1);
+  assert.equal(knownReads,0);assert.equal(claims,1);assert.equal(records.get('shop:new'),'posted');
+  assert.equal(saved.pool[0].item.itemCode,'shop:unused');
+});
+test('all known products exhaust the API budget without opening a browser context', async () => {
+  const {processAccount}=require('../index');let calls=0;
+  const history={state:async()=>null,saveState:async()=>{},known:async items=>new Set(items.map(i=>i.itemCode))};
+  const result=await processAccount({newContext:()=>{throw new Error('must not open');}},{mode:'run',rankingPages:1,maxItems:30,maxPosts:30},{name:'account1',genres:[]},{history,ranking:async()=>{calls++;return [{itemCode:'shop:old'}];}});
+  assert.equal(calls,1);assert.equal(result.historySkipped,1);assert.equal(result.stage,'partial');assert.equal(result.error,undefined);
+});

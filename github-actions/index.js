@@ -8,30 +8,54 @@ const { fetchRanking, buildPostContent, sleep } = require('./lib/ranking');
 const { openCollect, prepareCollect, diagnoseSocial, postItem, performFollow, performLike } = require('./lib/room');
 const { snapshot, operationOf } = require('./lib/diagnostics');
 const { assessRun, renderSummary } = require('./lib/report');
+const { HistoryStore } = require('./lib/history');
+const { isRoomEligible } = require('./lib/genres');
+const { Candidates } = require('./lib/candidates');
 
-async function processAccount(browser, config, account) {
-  const result = { account: account.name, mode: config.mode, stage: 'session', posted: 0, skipped: 0, followAttempts: 0, likeAttempts: 0, warnings: [], ok: false };
+async function processAccount(browser, config, account, { history = config.historyEnabled ? new HistoryStore(config, account) : null, ranking = fetchRanking, wait = sleep } = {}) {
+  const result = { account: account.name, mode: config.mode, stage: 'session', posted: 0, skipped: 0, historySkipped: 0, deferred: 0, rankingPages: 0, followAttempts: 0, likeAttempts: 0, warnings: [], ok: false };
   let context;
   let page;
   let authenticated = false;
+  let candidates;
   try {
+    result.stage = 'ranking';
+    let items;
+    let firstItem;
+    if (history && config.mode === 'run') {
+      candidates = new Candidates(account, config, history, { ranking });
+      await candidates.init();
+      firstItem = await candidates.next();
+      if (!firstItem) {
+        result.warnings.push('CANDIDATES_EXHAUSTED: 取得上限内に未投稿候補がありません。次回は続きのページ・ジャンルを取得します');
+        result.stage = 'partial';
+        return result;
+      }
+    } else {
+      if (history) await history.state(); // Diagnose DB access without writing history/cursors.
+      items = (await ranking(account, config)).filter(isRoomEligible);
+      result.rankingItems = items.length;
+      result.rankingPages = 1;
+      firstItem = items[0];
+      if (!firstItem) {
+        result.warnings.push('CANDIDATES_EXHAUSTED: 投稿対象の候補がありません');
+        result.stage = 'partial';
+        return result;
+      }
+    }
     const storageState = await loadState(config, account);
     context = await browser.newContext({ storageState, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', viewport: { width: 1365, height: 900 } });
     context.setDefaultTimeout(30000);
     context.setDefaultNavigationTimeout(30000);
     page = await context.newPage();
-    result.stage = 'ranking';
-    const items = await fetchRanking(account, config);
-    result.rankingItems = items.length;
-    console.log(`${account.name}: ランキング取得 ${items.length}件`);
     result.stage = 'login';
-    const initialState = await openCollect(page, items[0].itemCode, account);
+    const initialState = await openCollect(page, firstItem.itemCode, account);
     authenticated = true;
     await saveState(config, account, await context.storageState({ indexedDB: true }));
     if (config.mode === 'diagnose') {
       result.stage = 'collect-preflight';
       if (initialState === 'form') {
-        result.collectReady = await prepareCollect(page, await buildPostContent(items[0], { ...config, useOpenAI: false })) !== 'duplicate';
+        result.collectReady = await prepareCollect(page, await buildPostContent(firstItem, { ...config, useOpenAI: false })) !== 'duplicate';
       } else {
         result.collectReady = false;
       }
@@ -51,13 +75,22 @@ async function processAccount(browser, config, account) {
       catch (error) { result.warnings.push(`like / ${operationOf(error)} / ${safeError(error)}`); console.warn(`${account.name}: ${result.warnings.at(-1)}`); }
       console.log(`${account.name}: フォロー操作 ${result.followAttempts}件 / いいね操作 ${result.likeAttempts}件`);
       result.stage = 'post';
-      for (const item of items) {
-        // Generate text only after ROOM confirms the product is not collected.
-        const outcome = await postItem(page, item, () => buildPostContent(item, config), account);
+      let attempts = 0;
+      let item = firstItem;
+      while (item && attempts < config.maxItems) {
+        const outcome = await postItem(page, item, () => buildPostContent(item, config), account,
+          { beforeSubmit: () => history ? history.claim(item) : true });
         result[outcome]++;
-        console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件`);
-        if (result.posted >= config.maxPosts) break;
-        await sleep(5000);
+        if (history && outcome !== 'deferred') await history.finish(item, outcome === 'posted' ? 'posted' : 'duplicate');
+        candidates?.acknowledge();
+        attempts++;
+        console.log(`${account.name}: 投稿確認 ${result.posted}件 / コレ済み ${result.skipped}件 / 履歴競合 ${result.deferred}件`);
+        if (result.posted >= config.maxPosts || attempts >= config.maxItems) break;
+        await wait(5000);
+        item = candidates ? await candidates.next() : items[attempts];
+      }
+      if (candidates && result.posted < config.maxPosts) {
+        result.warnings.push('CANDIDATES_LIMIT: 候補または操作上限に達しました。投稿済み候補を再送せず次回へ進みます');
       }
     }
     result.stage = result.warnings.length ? 'partial' : 'complete';
@@ -69,6 +102,13 @@ async function processAccount(browser, config, account) {
     console.error(`${account.name} [${result.stage}/${result.operation}] ${result.error}`);
     console.error(`${account.name}: UI ${JSON.stringify(result.ui)}`);
   } finally {
+    if (candidates?.state) {
+      if (result.error) candidates.restoreCurrent();
+      result.historySkipped = candidates.historySkipped;
+      result.rankingPages = candidates.pages;
+      try { await candidates.save(); }
+      catch (error) { result.ok = false; result.stage = 'history-save'; result.error = safeError(error); }
+    }
     if (context) {
       try { if (authenticated) await saveState(config, account, await context.storageState({ indexedDB: true })); }
       catch (error) { result.ok = false; result.stage = 'session-save'; result.error = safeError(error); }

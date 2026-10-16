@@ -160,15 +160,17 @@ async function diagnoseSocial(page) {
   return { followCandidates: follow.followCandidates, likeCandidates: like.likeCandidates };
 }
 
-async function postItem(page, item, content, account) {
+async function postItem(page, item, content, account, { beforeSubmit = async () => true } = {}) {
   const state = await openCollect(page, item.itemCode, account);
   if (state === 'duplicate') return 'skipped';
   const text = typeof content === 'function' ? await content() : content;
   if (await prepareCollect(page, text) === 'duplicate') return 'skipped';
   // Product/duplicate dialogs may arrive after the item title or input appears.
-  const beforeSubmit = await readWhileNavigating(() => page.evaluate(inspectPage));
-  if (beforeSubmit === 'duplicate') return 'skipped';
-  checkState(beforeSubmit);
+  const submitState = await readWhileNavigating(() => page.evaluate(inspectPage));
+  if (submitState === 'duplicate') return 'skipped';
+  checkState(submitState);
+  // Persist a unique pending record before any possible mutation.
+  if (!await beforeSubmit()) return 'deferred';
   // Observe the UI's own request. Never print its URL, payload or response body.
   const responsePromise = page.waitForResponse(response => {
     const url = new URL(response.url());

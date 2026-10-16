@@ -70,8 +70,14 @@ jobs:
       RAKUTEN_SESSION: ${{ secrets.RAKUTEN_SESSION }}
       RAKUTEN_SESSION2: ${{ secrets.RAKUTEN_SESSION2 }}
       RAKUTEN_SESSION3: ${{ secrets.RAKUTEN_SESSION3 }}
-      USE_OPENAI: ${{ vars.USE_OPENAI || 'false' }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      USE_OPENAI: 'false'
+      HISTORY_ENABLED: ${{ vars.HISTORY_ENABLED || 'false' }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      ACCOUNT_GENRES1: ${{ vars.ACCOUNT_GENRES1 }}
+      ACCOUNT_GENRES2: ${{ vars.ACCOUNT_GENRES2 }}
+      ACCOUNT_GENRES3: ${{ vars.ACCOUNT_GENRES3 }}
+      RANKING_PAGES_PER_RUN: ${{ vars.RANKING_PAGES_PER_RUN || '1' }}
     steps:
       - uses: actions/checkout@v4
         with:

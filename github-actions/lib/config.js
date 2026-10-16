@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { parseGenres } = require('./genres');
 
 class RunError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -19,7 +20,7 @@ function readConfig(env = process.env) {
   const accounts = ids.map(id => {
     const suffix = id === 1 ? '' : String(id);
     const account = {
-      id, name: `account${id}`,
+      id, name: `account${id}`, genres: parseGenres(env[`ACCOUNT_GENRES${id}`] || ''),
       appId: env[`RAKUTEN_APP_ID${suffix}`] || env.RAKUTEN_APP_ID,
       userId: env[`RAKUTEN_USER_ID${suffix}`], password: env[`RAKUTEN_PASSWORD${suffix}`],
       session: env[`RAKUTEN_SESSION${suffix}`],
@@ -29,7 +30,16 @@ function readConfig(env = process.env) {
   });
   if (!env.ACCESS_TOKEN) throw new RunError('CONFIG', 'ACCESS_TOKEN（楽天API accessKey）が必要です');
   if (env.USE_OPENAI === 'true' && !env.OPENAI_API_KEY) throw new RunError('CONFIG', 'USE_OPENAI=true には OPENAI_API_KEY が必要です');
+  const historyEnabled = env.HISTORY_ENABLED === 'true';
+  const supabaseUrl = (env.SUPABASE_URL || '').replace(/\/$/, '');
+  const supabaseKey = env.SUPABASE_SECRET_KEY || '';
+  if (historyEnabled && (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(supabaseUrl) || !supabaseKey)) {
+    throw new RunError('CONFIG', '履歴管理にはSUPABASE_URLとサーバー用SUPABASE_SECRET_KEYが必要です');
+  }
+  const rankingPages = Number(env.RANKING_PAGES_PER_RUN || 1);
+  if (!Number.isInteger(rankingPages) || rankingPages < 1 || rankingPages > 3) throw new RunError('CONFIG', 'RANKING_PAGES_PER_RUNは1〜3です');
   return {
+    historyEnabled, supabaseUrl, supabaseKey, rankingPages,
     accounts, mode, maxItems, maxPosts, key, accessKey: env.ACCESS_TOKEN,
     useOpenAI: env.USE_OPENAI === 'true', openaiKey: env.OPENAI_API_KEY,
     stateDir: path.resolve(env.STATE_DIR || path.join(__dirname, '..', '.state')),
