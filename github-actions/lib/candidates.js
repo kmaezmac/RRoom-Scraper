@@ -55,7 +55,7 @@ class Candidates {
       this.state.pages[key] = items.length === 0 || page === 34 ? 1 : page + 1;
       this.state.pool = items.filter(item => isRoomEligible(item) && !this.seen.has(item.itemCode)).map(item => ({ item: {
         itemCode: item.itemCode, itemName: limitPostContent(item.itemName || ''), catchcopy: limitPostContent(item.catchcopy || ''),
-        itemCaption: limitPostContent(item.itemCaption || '', 200), genreId: item.genreId, requestedGenreId: item.requestedGenreId,
+        itemCaption: limitPostContent(item.itemCaption || '', 200), genreId: item.genreId, requestedGenreId: item.requestedGenreId, availability: item.availability,
       }, fetchedAt: this.now() }));
       await this.filterKnown();
       // Save the cursor AND candidates before browser work, including an empty page.

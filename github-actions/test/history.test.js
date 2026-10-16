@@ -177,3 +177,26 @@ test('cached excluded items are removed before browser selection and eligible le
   const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:()=>{throw new Error('extra API call');}});
   await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:good');assert.equal(candidates.pages,0);
 });
+test('sold-out ranking rows are skipped before selection without extra API calls or history records', async () => {
+  const { isRoomEligible } = require('../lib/genres');
+  for (const availability of [0,'0']) assert.equal(isRoomEligible({...item('sold'),availability}),false);
+  for (const availability of [1,'1',undefined,null]) assert.equal(isRoomEligible({...item('available'),availability}),true);
+  const history=memoryHistory(); let calls=0;
+  const candidates=new Candidates({genres:[]},{rankingPages:1},history,{ranking:async()=>{
+    calls++;return [{...item('sold'),availability:0},{...item('available'),availability:1}];
+  }});
+  await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:available');
+  assert.equal(calls,1);assert.equal(history.codes.size,0);
+  assert.equal(history.saved.pool.length,1);assert.equal(history.saved.pool[0].item.availability,1);
+});
+test('all-sold-out pages advance and saved sold-out candidates are removed', async () => {
+  const history=memoryHistory(); const calls=[];
+  history.saved={version:1,signature:'[]',turn:0,pages:{},pool:[{item:{...item('cached'),availability:0},fetchedAt:100}]};
+  for(let n=0;n<2;n++) {
+    const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:async(_,__,o)=>{
+      calls.push(o.page);return [{...item('sold'),availability:'0'}];
+    }});
+    await candidates.init();assert.equal(await candidates.next(),null);
+  }
+  assert.deepEqual(calls,[1,2]);assert.equal(history.saved.pool.length,0);
+});

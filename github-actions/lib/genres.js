@@ -42,6 +42,9 @@ const excludedGenres = new Set(['551169', '201541']);
 // ROOM help: https://room.rakuten.co.jp/info/help/collect/08.html
 // Only information already returned by ranking is used; no per-item API calls.
 function isRoomEligible(item) {
+  // Ranking returns availability; it has no availability input filter.
+  // Missing flags in older cached candidates mean unknown, not sold out.
+  if (item.availability === 0 || item.availability === '0') return false;
   if (excludedGenres.has(String(item.genreId)) || excludedGenres.has(String(item.requestedGenreId))) return false;
   const shop = String(item.itemCode || '').split(':')[0];
   if (shop === 'rakutenkobo-ebooks') return false;
