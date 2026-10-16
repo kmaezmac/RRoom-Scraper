@@ -154,3 +154,16 @@ test('ROOM product query keeps the literal colon required by its legacy parser',
   assert.equal(legacyValue, 'shop:12345');
   assert.equal(new URL(mixUrl('shop:item&extra=value')).searchParams.has('extra'), false);
 });
+test('account pairs preserve account numbers, credentials and genre settings', () => {
+  const env={...base,RAKUTEN_APP_ID2:'app-two',RAKUTEN_APP_ID3:'app-three',RAKUTEN_USER_ID2:'user-two',RAKUTEN_USER_ID3:'user-three',RAKUTEN_PASSWORD2:'pass-two',RAKUTEN_PASSWORD3:'pass-three',RAKUTEN_SESSION2:'session-two',RAKUTEN_SESSION3:'session-three',ACCOUNT_GENRES1:'invalid-unselected',ACCOUNT_GENRES2:'100804',ACCOUNT_GENRES3:'100533'};
+  const accounts=readConfig({...env,RUN_ACCOUNT:'account2_3'}).accounts;
+  assert.deepEqual(accounts.map(a=>[a.id,a.name,a.appId,a.userId,a.password,a.session,a.genres]),[
+    [2,'account2','app-two','user-two','pass-two','session-two',['100804']],
+    [3,'account3','app-three','user-three','pass-three','session-three',['100533']],
+  ]);
+  for(const [selection,ids] of Object.entries({account1_2:[1,2],account1_3:[1,3],account2_3:[2,3],both:[1,2]})) {
+    assert.deepEqual(readConfig({...base,RUN_ACCOUNT:selection}).accounts.map(a=>a.id),ids);
+  }
+  const request=require('../cron-job.account2-3.request.json');
+  assert.deepEqual(readConfig({...base,RUN_ACCOUNT:request.inputs.account,RUN_MODE:request.inputs.mode}).accounts.map(a=>a.id),[2,3]);
+});

@@ -7,8 +7,8 @@ class RunError extends Error {
 
 function readConfig(env = process.env) {
   const selection = env.RUN_ACCOUNT || 'all';
-  const ids = { all: [1, 2, 3], both: [1, 2], account1: [1], account2: [2], account3: [3] }[selection];
-  if (!ids) throw new RunError('CONFIG', 'RUN_ACCOUNT は all / account1 / account2 / account3 を指定してください');
+  const ids = { all: [1, 2, 3], both: [1, 2], account1_2: [1, 2], account1_3: [1, 3], account2_3: [2, 3], account1: [1], account2: [2], account3: [3] }[selection];
+  if (!ids) throw new RunError('CONFIG', 'RUN_ACCOUNT は all / account1 / account2 / account3 / account1_2 / account1_3 / account2_3 を指定してください');
   const mode = env.RUN_MODE || 'diagnose';
   if (!['diagnose', 'run'].includes(mode)) throw new RunError('CONFIG', 'RUN_MODE は diagnose / run を指定してください');
   const maxItems = Number(env.MAX_ITEMS || 30);
