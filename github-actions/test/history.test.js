@@ -97,8 +97,8 @@ test('atomic claims do not overwrite an existing pending or posted record', asyn
 });
 test('genre tags derive from selection and unknown genres use neutral fallback within 500 units', async () => {
   const text=await buildPostContent({...item('a'),requestedGenreId:'100804',itemCaption:'説明'.repeat(500)},{useOpenAI:false});
-  assert.ok(text.includes('#インテリア'));assert.ok(!text.includes('#ランキング'));assert.ok(text.length<=500);
-  assert.ok((await buildPostContent({...item('b'),genreId:'99999'},{useOpenAI:false})).endsWith('#楽天市場 #商品紹介'));
+  assert.ok(text.includes('#インテリア'));assert.ok(text.includes('#ランキング'));assert.ok(text.length<=500);
+  assert.ok((await buildPostContent({...item('b'),genreId:'99999'},{useOpenAI:false})).endsWith('#商品紹介 #あったら便利 #欲しいものリスト #ランキング #人気 #楽天市場 #お買い物メモ #おすすめ商品'));
 });
 test('short pages still advance because removed ranking entries may leave gaps', async () => {
   const history=memoryHistory(); const calls=[];
@@ -142,6 +142,10 @@ test('all supported catalog genres have tags and medicine rankings are rejected'
   for (const id of Object.keys(genreTags)) {
     assert.deepEqual(parseGenres(id), [id]);
     assert.ok(!tagsFor({requestedGenreId:id}).includes('#商品紹介'));
+    const text = tagsFor({requestedGenreId:id});
+    for (const tag of ['あったら便利','欲しいものリスト','ランキング','人気','楽天市場','お買い物メモ','おすすめ商品']) {
+      assert.equal(text.split(' ').filter(word => word === `#${tag}`).length, 1);
+    }
   }
   for (const id of ['551169','201541']) assert.throws(()=>parseGenres(id), /対象外/);
   for (const row of [

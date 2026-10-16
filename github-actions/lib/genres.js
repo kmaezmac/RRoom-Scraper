@@ -64,10 +64,11 @@ function parseGenres(value = '') {
   }
   return [...new Set(ids)];
 }
+// Shared discovery labels; not claims of purchase, use, discounts or original photos.
+const commonTags = ['あったら便利', '欲しいものリスト', 'ランキング', '人気', '楽天市場', 'お買い物メモ', 'おすすめ商品'];
 function tagsFor(item) {
   const id = String(item.requestedGenreId || item.genreId || '');
-  const tags = genreTags[id];
-  // Broad genre labels only; no claims about use, age, ingredients or benefits.
-  return tags ? ` ${tags.map(tag => `#${tag}`).join(' ')} #楽天市場` : ' #楽天市場 #商品紹介';
+  const tags = [...new Set([...(genreTags[id] || ['商品紹介']), ...commonTags])];
+  return ` ${tags.map(tag => `#${tag}`).join(' ')}`;
 }
 module.exports = { parseGenres, tagsFor, genreTags, isRoomEligible };
