@@ -9,6 +9,7 @@ const { openCollect, prepareCollect, diagnoseSocial, postItem, performFollow, pe
 const { snapshot, operationOf } = require('./lib/diagnostics');
 const { assessRun, renderSummary } = require('./lib/report');
 const { HistoryStore } = require('./lib/history');
+const { isRoomEligible } = require('./lib/genres');
 const { Candidates } = require('./lib/candidates');
 
 async function processAccount(browser, config, account, { history = config.historyEnabled ? new HistoryStore(config, account) : null, ranking = fetchRanking, wait = sleep } = {}) {
@@ -32,10 +33,15 @@ async function processAccount(browser, config, account, { history = config.histo
       }
     } else {
       if (history) await history.state(); // Diagnose DB access without writing history/cursors.
-      items = await ranking(account, config);
+      items = (await ranking(account, config)).filter(isRoomEligible);
       result.rankingItems = items.length;
       result.rankingPages = 1;
       firstItem = items[0];
+      if (!firstItem) {
+        result.warnings.push('CANDIDATES_EXHAUSTED: 投稿対象の候補がありません');
+        result.stage = 'partial';
+        return result;
+      }
     }
     const storageState = await loadState(config, account);
     context = await browser.newContext({ storageState, locale: 'ja-JP', timezoneId: 'Asia/Tokyo', viewport: { width: 1365, height: 900 } });

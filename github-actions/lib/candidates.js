@@ -1,5 +1,6 @@
 const { fetchRanking, limitPostContent } = require('./ranking');
 const { RunError } = require('./config');
+const { isRoomEligible } = require('./genres');
 const TTL = 24 * 60 * 60 * 1000;
 
 class Candidates {
@@ -19,6 +20,7 @@ class Candidates {
     await this.filterKnown();
   }
   async filterKnown() {
+    this.state.pool = this.state.pool.filter(entry => isRoomEligible(entry.item));
     const known = await this.history.known(this.state.pool.map(entry => entry.item));
     this.state.pool = this.state.pool.filter(entry => {
       if (known.has(entry.item.itemCode)) { this.historySkipped++; return false; }
@@ -51,7 +53,7 @@ class Candidates {
       const items = await this.ranking(this.account, this.config, { genreId, page, fullPage: true, allowEmpty: true });
       this.state.turn++;
       this.state.pages[key] = items.length === 0 || page === 34 ? 1 : page + 1;
-      this.state.pool = items.filter(item => !this.seen.has(item.itemCode)).map(item => ({ item: {
+      this.state.pool = items.filter(item => isRoomEligible(item) && !this.seen.has(item.itemCode)).map(item => ({ item: {
         itemCode: item.itemCode, itemName: limitPostContent(item.itemName || ''), catchcopy: limitPostContent(item.catchcopy || ''),
         itemCaption: limitPostContent(item.itemCaption || '', 200), genreId: item.genreId, requestedGenreId: item.requestedGenreId,
       }, fetchedAt: this.now() }));

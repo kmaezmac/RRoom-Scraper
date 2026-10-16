@@ -136,3 +136,40 @@ test('documented ranking not_found advances the cursor; auth and unexpected 404 
   const candidates=new Candidates(account,{rankingPages:1},history,{ranking:()=>fetchPage({error:'not_found'})});
   await candidates.init();assert.equal(await candidates.next(),null);assert.equal(history.saved.pages['100804'],1);
 });
+test('all supported catalog genres have tags and medicine rankings are rejected', () => {
+  const { genreTags, tagsFor, parseGenres, isRoomEligible } = require('../lib/genres');
+  assert.equal(Object.keys(genreTags).length, 36);
+  for (const id of Object.keys(genreTags)) {
+    assert.deepEqual(parseGenres(id), [id]);
+    assert.ok(!tagsFor({requestedGenreId:id}).includes('#商品紹介'));
+  }
+  for (const id of ['551169','201541']) assert.throws(()=>parseGenres(id), /対象外/);
+  for (const row of [
+    {...item('drug'),itemName:'【第２類医薬品】かぜ薬'},
+    {...item('drug'),itemName:'指定第2類医薬品'},
+    {...item('drug'),genreId:201541},
+    {itemCode:'rakutenkobo-ebooks:123',itemName:'本'},
+    {itemCode:'book:123',itemName:'ソフト ダウンロード版'},
+  ]) assert.equal(isRoomEligible(row), false);
+  for (const name of ['医薬部外品 シャンプー','Kobo 電子書籍リーダー ケース','薬の歴史についての本','コンタクトレンズ']) {
+    assert.equal(isRoomEligible({...item('allowed'),itemName:name}), true);
+  }
+});
+test('excluded candidates advance raw page cursors without increasing the API budget', async () => {
+  const history=memoryHistory(), calls=[];
+  const ranking=async(_,__,o)=>{calls.push([o.genreId,o.page]);return [{...item('drug'),itemName:'第1類医薬品'}];};
+  for(let n=0;n<4;n++) {
+    const candidates=new Candidates({genres:['100804','100533']},{rankingPages:1},history,{ranking});
+    await candidates.init(); assert.equal(await candidates.next(),null);
+  }
+  assert.deepEqual(calls,[['100804',1],['100533',1],['100804',2],['100533',2]]);
+});
+test('cached excluded items are removed before browser selection and eligible leftovers need no API', async () => {
+  const history=memoryHistory();
+  history.saved={version:1,signature:'[]',turn:0,pages:{},pool:[
+    {item:{itemCode:'rakutenkobo-ebooks:1'},fetchedAt:100},
+    {item:item('good'),fetchedAt:100},
+  ]};
+  const candidates=new Candidates({genres:[]},{rankingPages:1},history,{now:()=>200,ranking:()=>{throw new Error('extra API call');}});
+  await candidates.init();assert.equal((await candidates.next()).itemCode,'shop:good');assert.equal(candidates.pages,0);
+});
