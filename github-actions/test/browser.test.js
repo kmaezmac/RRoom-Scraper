@@ -312,3 +312,41 @@ test('all known products exhaust the API budget without opening a browser contex
   const result=await processAccount({newContext:()=>{throw new Error('must not open');}},{mode:'run',rankingPages:1,maxItems:30,maxPosts:30},{name:'account1',genres:[]},{history,ranking:async()=>{calls++;return [{itemCode:'shop:old'}];}});
   assert.equal(calls,1);assert.equal(result.historySkipped,1);assert.equal(result.stage,'partial');assert.equal(result.error,undefined);
 });
+test('social discovery traverses multiple users and skips following accounts and duplicates', async t => {
+  const { runSocial } = require('../lib/social');let clicks=0;
+  const row=(name,followed=false)=>`<li><a href="/${name}/items">name</a><button aria-label="${followed?'フォロー中':'フォローする'}" onclick="fetch('/social-write');this.setAttribute('aria-label','フォロー中');this.innerText='フォロー中'">${followed?'フォロー中':'フォローする'}</button></li>`;
+  const page=await fixture(t,url=>{
+    if(url.pathname==='/social-write'){clicks++;return '';}
+    if(url.pathname.includes('recommendUsers'))return row('existing',true)+'<a href="/first/items">first</a><a href="/second/items">second</a>';
+    if(url.pathname==='/first/followers')return '<ul>'+row('new-one')+'</ul>';
+    if(url.pathname==='/second/followers')return '<ul>'+row('new-one')+row('new-two')+'</ul>';
+    return '<p>empty</p>';
+  });
+  const result=await runSocial(page,'follow',{navigate,target:2,reserve:async()=>true,block:async()=>{},wait:async()=>{}});
+  assert.equal(result.confirmed,2);assert.equal(result.attempted,2);assert.equal(clicks,2);assert.equal(result.stop,'target');
+});
+test('social discovery scrolls follower dialog rather than only the window', async t => {
+  const { runSocial } = require('../lib/social');
+  const page=await fixture(t,()=>`<div class="modal-popup"><div class="body" style="height:100px;overflow:auto"><div style="height:400px">list</div></div></div><script>
+  const list=document.querySelector('.body');list.addEventListener('scroll',()=>{
+    if(list.dataset.loaded)return;list.dataset.loaded='1';const b=document.createElement('button');
+    b.setAttribute('aria-label','フォローする');b.innerText='フォロー';
+    b.onclick=()=>{b.innerText='フォロー中';b.setAttribute('aria-label','フォロー中');};list.append(b);
+  });</script>`);
+  const result=await runSocial(page,'follow',{navigate,target:1,reserve:async()=>true,block:async()=>{},wait:async()=>page.waitForTimeout(30)});
+  assert.equal(result.confirmed,1);
+});
+test('unconfirmed social clicks stop without repeatedly clicking', async t => {
+  const { runSocial } = require('../lib/social');let blocks=[];
+  const page=await fixture(t,()=>'<button aria-label="フォローする">フォロー</button><button aria-label="フォローする">フォロー</button>');
+  const result=await runSocial(page,'follow',{navigate,reserve:async()=>true,block:async limited=>blocks.push(limited),wait:async()=>{}});
+  assert.equal(result.attempted,1);assert.equal(result.confirmed,0);assert.equal(result.stop,'unconfirmed');assert.deepEqual(blocks,[false]);
+});
+test('social budget and ROOM limit messages stop before any click', async t => {
+  const { runSocial } = require('../lib/social');let blocks=[];
+  const page=await fixture(t,()=>'<a class="icon-like right">いいね</a>');
+  let result=await runSocial(page,'like',{navigate,reserve:async()=>false,block:async()=>{},wait:async()=>{}});
+  assert.equal(result.attempted,0);assert.equal(result.stop,'budget');
+  result=await runSocial(page,'like',{navigate:async()=>page.setContent('<div role="alert">ご利用上限数に達しています</div>'),reserve:async()=>true,block:async limited=>blocks.push(limited),wait:async()=>{}});
+  assert.equal(result.attempted,0);assert.equal(result.stop,'limited');assert.deepEqual(blocks,[true]);
+});

@@ -17,3 +17,13 @@ alter table public.room_candidate_state enable row level security;
 revoke all on public.room_post_history, public.room_candidate_state from anon, authenticated;
 grant select, insert, update, delete on public.room_post_history, public.room_candidate_state to service_role;
 -- No public policies: only server-side secret/service_role keys may access these tables.
+-- Apply before enabling the new social runner. No ROOM IDs/URLs are stored.
+create table if not exists public.room_social_state (
+  account text primary key check (account in ('account1','account2','account3')),
+  state jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.room_social_state enable row level security;
+revoke all on public.room_social_state from anon, authenticated;
+grant select, insert, update on public.room_social_state to service_role;
+-- Do not reset these timestamps when deleting posts: ROOM's action limits persist.

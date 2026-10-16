@@ -10,6 +10,9 @@ const { snapshot, operationOf } = require('./lib/diagnostics');
 const { assessRun, renderSummary } = require('./lib/report');
 const { HistoryStore } = require('./lib/history');
 const { isRoomEligible } = require('./lib/genres');
+const { SocialBudget } = require('./lib/social-budget');
+const { runSocial } = require('./lib/social');
+const { navigate: navigateSocial } = require('./lib/room');
 const { Candidates } = require('./lib/candidates');
 
 async function processAccount(browser, config, account, { history = config.historyEnabled ? new HistoryStore(config, account) : null, ranking = fetchRanking, wait = sleep } = {}) {
@@ -67,12 +70,31 @@ async function processAccount(browser, config, account, { history = config.histo
       console.log(`${account.name}: フォロー候補 ${result.social.followCandidates}件 / いいね候補 ${result.social.likeCandidates}件（未操作）`);
       console.log(`${account.name}: ${result.collectReady ? 'API・認証・投稿入力欄・送信ボタン・一覧を確認' : 'API・認証・一覧を確認（コレ済みのため入力欄・送信ボタンは未検証）'}（投稿/フォロー/いいね未実行）`);
     } else {
-      result.stage = 'follow';
-      try { result.followAttempts = await performFollow(page); }
-      catch (error) { result.warnings.push(`follow / ${operationOf(error)} / ${safeError(error)}`); console.warn(`${account.name}: ${result.warnings.at(-1)}`); }
-      result.stage = 'like';
-      try { result.likeAttempts = await performLike(page); }
-      catch (error) { result.warnings.push(`like / ${operationOf(error)} / ${safeError(error)}`); console.warn(`${account.name}: ${result.warnings.at(-1)}`); }
+      let budget;
+      if (history) {
+        try { const candidateBudget = new SocialBudget(history); await candidateBudget.init(); budget = candidateBudget; }
+        catch (error) { result.warnings.push(`social / ${safeError(error)}`); }
+      }
+      for (const kind of ['follow', 'like']) {
+        result.stage = kind;
+        try {
+          if (budget?.state) {
+            const social = await runSocial(page, kind, {
+              navigate: navigateSocial, reserve: () => budget.reserve(kind), block: limited => budget.block(kind, limited),
+            });
+            result[`${kind}Attempts`] = social.attempted;
+            result[`${kind}Confirmed`] = social.confirmed;
+            result[`${kind}Stop`] = social.stop;
+            console.log(`${account.name}: ${kind} 操作 ${social.attempted}件 / 確認 ${social.confirmed}件 / 探索 ${social.pages}ページ / 終了 ${social.stop}`);
+            if (!['target', 'candidates_exhausted', 'budget'].includes(social.stop)) result.warnings.push(`SOCIAL_STOP: ${kind} / ${social.stop}`);
+          } else if (!history) {
+            result[`${kind}Attempts`] = await (kind === 'follow' ? performFollow(page) : performLike(page));
+          }
+        } catch (error) {
+          result.warnings.push(`${kind} / ${operationOf(error)} / ${safeError(error)}`);
+          console.warn(`${account.name}: ${result.warnings.at(-1)}`);
+        }
+      }
       console.log(`${account.name}: フォロー操作 ${result.followAttempts}件 / いいね操作 ${result.likeAttempts}件`);
       result.stage = 'post';
       let attempts = 0;
