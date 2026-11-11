@@ -106,8 +106,12 @@ jobs:
         run: node scripts/check-browser.cjs
       - name: 実行
         run: npm start
+      - name: 保存対象の暗号化セッションを確認
+        id: session-cache-status
+        if: always()
+        run: bash scripts/session-cache-status.sh >> "$GITHUB_OUTPUT"
       - name: 更新した暗号化セッションを保存
-        if: always() && hashFiles('github-actions/.state/*.enc') != ''
+        if: always() && steps.session-cache-status.outputs.exists == 'true'
         uses: actions/cache/save@v4
         with:
           path: github-actions/.state/*.enc
