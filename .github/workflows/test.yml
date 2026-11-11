@@ -50,3 +50,52 @@ jobs:
       - run: npm run test:browser
       - name: Public ROOM connectivity (no credentials or mutations)
         run: npm run probe
+  session-cache:
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: github-actions
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Missing directory is skipped
+        run: test "$(bash scripts/session-cache-status.sh cache-fixture)" = 'exists=false'
+      - name: Create synthetic session with production permissions
+        run: |
+          mkdir -m 700 cache-fixture
+          printf 'synthetic-session-only' > cache-fixture/account1.enc
+          chmod 600 cache-fixture/account1.enc
+      - name: Check fixture inside container
+        id: session-cache-status
+        if: always()
+        run: bash scripts/session-cache-status.sh cache-fixture >> "$GITHUB_OUTPUT"
+      - name: Save synthetic session
+        if: always() && steps.session-cache-status.outputs.exists == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: github-actions/cache-fixture/*.enc
+          key: room-session-test-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Remove fixture before restore
+        run: |
+          test '${{ steps.session-cache-status.outputs.exists }}' = 'true'
+          rm cache-fixture/account1.enc
+      - name: Restore synthetic session
+        uses: actions/cache/restore@v4
+        with:
+          path: github-actions/cache-fixture/*.enc
+          key: room-session-test-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+      - name: Verify restored content and permissions
+        run: |
+          test "$(cat cache-fixture/account1.enc)" = 'synthetic-session-only'
+          test "$(stat -c '%a' cache-fixture/account1.enc)" = '600'
+          rm cache-fixture/account1.enc
+      - name: Empty directory and unrelated files are skipped
+        run: |
+          touch cache-fixture/summary.json
+          test "$(bash scripts/session-cache-status.sh cache-fixture)" = 'exists=false'
