@@ -46,6 +46,9 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      options: --init --ipc=host
     # Up to 90 candidates, including reopening each new post to verify it.
     timeout-minutes: 180
     defaults:
@@ -98,14 +101,9 @@ jobs:
           key: room-session-v1-${{ vars.SESSION_VERSION || '1' }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             room-session-v1-${{ vars.SESSION_VERSION || '1' }}-
-      - name: Ubuntu公式配布先へ切り替え
-        run: sudo python3 scripts/configure-ubuntu-mirror.py
-      - name: ChromiumのOS依存パッケージをインストール（最大3試行）
-        timeout-minutes: 15
-        run: bash scripts/install-browser.sh deps
-      - name: ヘッドレスChromiumをインストール（最大3試行）
-        timeout-minutes: 10
-        run: bash scripts/install-browser.sh browser
+      - name: 同梱Chromiumのバージョン・起動確認
+        timeout-minutes: 2
+        run: node scripts/check-browser.cjs
       - name: 実行
         run: npm start
       - name: 更新した暗号化セッションを保存
