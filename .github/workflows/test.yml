@@ -26,6 +26,9 @@ jobs:
         run: sleep 15
   test:
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      options: --init --ipc=host
     timeout-minutes: 10
     defaults:
       run:
@@ -41,7 +44,9 @@ jobs:
           cache-dependency-path: github-actions/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium --only-shell
+      - name: Verify bundled Chromium version and launch
+        timeout-minutes: 2
+        run: node scripts/check-browser.cjs
       - run: npm run test:browser
       - name: Public ROOM connectivity (no credentials or mutations)
         run: npm run probe
