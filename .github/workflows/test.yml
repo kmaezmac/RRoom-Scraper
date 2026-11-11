@@ -26,7 +26,7 @@ jobs:
         run: sleep 15
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 35
     defaults:
       run:
         working-directory: github-actions
@@ -41,7 +41,13 @@ jobs:
           cache-dependency-path: github-actions/package-lock.json
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium --only-shell
+      - run: node --test test/install-browser.test.js
+      - name: Install Chromium OS dependencies
+        timeout-minutes: 15
+        run: bash scripts/install-browser.sh deps
+      - name: Install Chromium headless shell
+        timeout-minutes: 10
+        run: bash scripts/install-browser.sh browser
       - run: npm run test:browser
       - name: Public ROOM connectivity (no credentials or mutations)
         run: npm run probe

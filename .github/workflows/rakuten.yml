@@ -98,8 +98,12 @@ jobs:
           key: room-session-v1-${{ vars.SESSION_VERSION || '1' }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             room-session-v1-${{ vars.SESSION_VERSION || '1' }}-
-      - name: ヘッドレスChromiumをインストール
-        run: npx playwright install --with-deps chromium --only-shell
+      - name: ChromiumのOS依存パッケージをインストール（最大3試行）
+        timeout-minutes: 15
+        run: bash scripts/install-browser.sh deps
+      - name: ヘッドレスChromiumをインストール（最大3試行）
+        timeout-minutes: 10
+        run: bash scripts/install-browser.sh browser
       - name: 実行
         run: npm start
       - name: 更新した暗号化セッションを保存
